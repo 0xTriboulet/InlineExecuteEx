@@ -1,10 +1,11 @@
 # InlineExcuteEx
 Beacon Object Files (BOFs) in the Cobalt Strike ecosystem are intended to be an abstraction of Position Independent Code (PIC). To maximize
-the benefits of this, Cobalt Strike pre-processes BOFs to strip away sections that are not needed to achieve code execution. In addition
-to reducing the size of the BOF, the BOF loader in Beacon is very small compared to other BOF implementations. Unfortunately, this pre-processing
-has the inadvertent effect of reducing the features available from a BOF because the additional information is not available to Beacon
-at load-time. `InlineExcuteEx` implements [COFFLoader](https://github.com/trustedsec/COFFLoader) as a Cobalt Strike compatible BOF, which
-can be used to fire other BOFs.
+the benefits of this, Cobalt Strike pre-processes BOFs to strip away sections that are not needed to achieve code execution. This design
+confers some advantages for users of the framework. It reduces the size of the BOF that Beacon receives from the Teamserver, and the BOF 
+loader in Beacon is very small compared to other BOF implementations. Unfortunately, this pre-processing has the inadvertent effect of
+reducing the features available from a BOF because the additional information is not available to Beacon at load-time. `InlineExcuteEx`
+implements [COFFLoader](https://github.com/trustedsec/COFFLoader) as a Cobalt Strike compatible BOF, which can be used to fire other BOFs
+in a more complete way than is currently possible from Beacon.
 
 ## Usage
 Load `inline-execute-ex.cna` from the `Script Manager`, this will make the `inline-execute-ex` command available to you.
