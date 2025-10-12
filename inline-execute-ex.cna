@@ -1,0 +1,73 @@
+# $1 - the id for the Beacon
+# $2 - a string containing the BOF file
+# $3 - the entry function to call
+# $4 - argument to pass to the BOF file
+sub beacon_inline_execute_ex {
+    $x64_path = getFileProper(script_resource("."), "x64", "Release", "bof.x64.o");
+    $x86_path = getFileProper(script_resource("."), "Release", "bof.x86.o");
+    
+    $barch  = barch($1);
+    println("Beacon Arch: " . $barch);
+
+    # figure out the arch of this session and get a handle to the loader
+    if ($barch eq "x64") { # 64-bit
+        $handle = openf($x64_path);
+        println("BOF Loader Path: " . $x64_path);
+    } else { # 32-bit
+        $handle = openf($x86_path);
+        println("BOF Loader Path: " . $x86_path);
+    }
+
+    println("BOF Path: " . $2);
+    
+    # read the BOF loader
+    $bof_loader = readb($handle, -1);
+    closef($handle);
+
+    # read the BOF we actually want to run
+    $bof_path = getFileProper($2);
+    $handle = openf($bof_path);
+    $bof = readb($handle, -1);
+    closef($handle);
+
+    # pack the bof itself, the entry function name for the bof, and the args for that bof
+    $packed = bof_pack($1, "bzz", $bof,  $3, $4);
+
+    println("Entry function: ". $3);
+    println("BOF Size: " . strlen($bof));
+    println("Args: " . $4);
+
+    # announce what we're doing
+    btask($1, "Running BOF" . $bof_path . ".");
+
+    # actually run the BOF
+    beacon_inline_execute($1, $bof_loader, "go", $packed);
+}
+
+# $1 - the id for the Beacon
+# $2 - a string containing the BOF file
+# $3 - the entry point to call
+# $4 - argument to pass to the BOF file
+alias inline-execute-ex {
+    beacon_inline_execute_ex($1, $2, $3, $4);
+}
+
+# --------------------
+# Register the postex-kit command
+# --------------------
+beacon_command_group(
+	"inline_execute_ex",
+	"BOF+",
+	"[EXPERIMENTAL] BOF Loader."
+);
+
+beacon_command_register(
+	"inline-execute-ex", 
+	"[EXPERIMENTAL] BOF loader with additional capabilities.",
+    "# 1 - a string containing the BOF file\n".
+    "# 2 - the entry point to call\n".
+    "# 3 - arguments to pass to the BOF file\n\n".
+    "Usage: inline-execute-ex 'bof.o' 'go' 'hello world!'",
+	"inline_execute_ex"
+);
+
