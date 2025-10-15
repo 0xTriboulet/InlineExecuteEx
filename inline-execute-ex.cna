@@ -29,8 +29,8 @@ sub beacon_inline_execute_ex {
     println("BOF Size: " . strlen($bof));
     println("Args: " . $4);
 
-    # announce what we're doing
-    btask($1, "Running BOF" . $bof_path . ".");
+    # announce what we're doing -- Enable if you want to force BOFs to create a task
+    # btask($1, "Running InlineExecuteEx.");
 
     # actually run the BOF
     beacon_inline_execute($1, $bof_loader, "go", $packed);
