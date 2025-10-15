@@ -1,5 +1,5 @@
 # $1 - the id for the Beacon
-# $2 - a string containing the BOF file
+# $2 - bytes of the BOF file
 # $3 - the entry function to call
 # $4 - argument to pass to the BOF file
 sub beacon_inline_execute_ex {
@@ -17,21 +17,13 @@ sub beacon_inline_execute_ex {
         $handle = openf($x86_path);
         println("BOF Loader Path: " . $x86_path);
     }
-
-    println("BOF Path: " . $2);
     
     # read the BOF loader
     $bof_loader = readb($handle, -1);
     closef($handle);
 
-    # read the BOF we actually want to run
-    $bof_path = getFileProper($2);
-    $handle = openf($bof_path);
-    $bof = readb($handle, -1);
-    closef($handle);
-
     # pack the bof itself, the entry function name for the bof, and the args for that bof
-    $packed = bof_pack($1, "bzz", $bof,  $3, $4);
+    $packed = bof_pack($1, "bzz", $2,  $3, $4);
 
     println("Entry function: ". $3);
     println("BOF Size: " . strlen($bof));
@@ -49,7 +41,12 @@ sub beacon_inline_execute_ex {
 # $3 - the entry point to call
 # $4 - argument to pass to the BOF file
 alias inline-execute-ex {
-    beacon_inline_execute_ex($1, $2, $3, $4);
+    # read the BOF we actually want to run
+    $bof_path = getFileProper($2);
+    $handle = openf($bof_path);
+    $bof = readb($handle, -1);
+    closef($handle);
+    beacon_inline_execute_ex($1, $bof, $3, $4);
 }
 
 # --------------------
