@@ -60,11 +60,10 @@ beacon_command_group(
 
 beacon_command_register(
 	"inline-execute-ex", 
-	"[EXPERIMENTAL] BOF loader with additional capabilities.",
+	"[EXPERIMENTAL] We heard you like BOFs. So I put a BOF in your BOF.",
     "# 1 - a string containing the BOF file\n".
     "# 2 - the entry point to call\n".
     "# 3 - arguments to pass to the BOF file\n\n".
     "Usage: inline-execute-ex 'bof.o' 'go' 'hello world!'",
 	"inline_execute_ex"
 );
-

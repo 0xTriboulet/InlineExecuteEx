@@ -17,7 +17,7 @@ BOF+
 ====
 [EXPERIMENTAL] BOF Loader.
 
-    inline-execute-ex          [EXPERIMENTAL] BOF loader with additional capabilities.
+	[EXPERIMENTAL] I heard you like BOFs. So I put a BOF in your BOF.
 ```
 
 You can use the `help inline-execute-ex` command to get some usage information from the command line.
