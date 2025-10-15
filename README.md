@@ -71,7 +71,7 @@ alias dir {
 	beacon_inline_execute_ex($1, readbof($1, "dir", $msg, $ttp), "go", $args);
 }
 ```
-If all goes well, you should see this when you run the alias.
+Then reload your `.cna` in the `Script Manager`. If all goes well, you should see this when you run the alias.
 ```sh
 [10/15 16:36:25] beacon> dir
 [10/15 16:36:25] [+] Running dir (T1083)
