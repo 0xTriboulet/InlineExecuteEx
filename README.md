@@ -74,7 +74,7 @@ If all goes well, you should see this when you run the alias.
 [10/15 16:36:25] beacon> dir
 [10/15 16:36:25] [+] Running dir (T1083)
 [10/15 16:36:25] [*] Running dir (T1083)
-[10/15 16:36:25] [*] Running InlineExecuteEx.. # <----- It works!
+[10/15 16:36:25] [*] Running InlineExecuteEx. # <----- It works!
 [10/15 16:36:26] [+] host called home, sent: 23152 bytes
 [10/15 16:36:26] [+] received output:
 Contents of .\*:
