@@ -7,7 +7,7 @@ reducing the features available from a BOF because the additional information is
 implements [COFFLoader](https://github.com/trustedsec/COFFLoader) as a Cobalt Strike compatible BOF, which can be used to fire other BOFs
 in a more complete way than what is currently possible from Beacon.
 
-The obvious trade here is that you lose the approximate lightness of PIC offered by Beacon's BOF loader, in favor of a a heavier abstraction. This is a nuance that may or may not be relevant to your use case. The intent of this implementation is to offer users the framework a *choice*.
+The obvious trade here is that you lose the approximate lightness of PIC offered by Beacon's BOF loader, in favor of a a heavier abstraction. This is a nuance that may or may not be relevant to your use case. The intent of this implementation is to offer users of the framework a *choice*.
 
 ## Basic Usage
 Load `inline-execute-ex.cna` from the `Script Manager`. This will make the `inline-execute-ex` command available to you.
