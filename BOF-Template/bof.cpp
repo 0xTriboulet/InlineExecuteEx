@@ -133,6 +133,10 @@ extern "C" {
         return functionPtr;
     }
 
+    LONGLONG llabs(LONGLONG n) {
+        return (n < 0) ? -n : n;
+    }
+
     BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T coffSize, UCHAR* argData, SIZE_T argLen) {
 
         /* Input validation */
@@ -150,8 +154,6 @@ extern "C" {
         DFR_LOCAL(MSVCRT, strlen)
         DFR_LOCAL(MSVCRT, strcmp)
         DFR_LOCAL(MSVCRT, free)
-
-        DFR_LOCAL(MSVCR120, llabs)
 
         PIMAGE_SECTION_HEADER sectionPtr          = NULL;
         PIMAGE_SECTION_HEADER firstSection        = NULL;
@@ -585,7 +587,7 @@ extern "C" {
     int main(int argc, char* argv[]) {
         // Run BOF's entrypoint
         // To pack arguments for the bof use e.g.: bof::runMocked<int, short, const char*>(go, 6502, 42, "foobar");
-        bof::runMocked<char*, char*>(go, (char*) "go", (char*) rawCoff, (char*)"Hello World", 12);
+        bof::runMocked<char*, char*>(go, (char*) rawCoff, (char*)"go", (char*)"Hello World", 12);
 
         return 0;
     }
