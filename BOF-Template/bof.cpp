@@ -62,7 +62,7 @@ extern "C" {
         if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
             goto Cleanup;
         }
-        
+
         bResult = TRUE;
 
     Cleanup:
@@ -78,41 +78,41 @@ extern "C" {
         RETURN_FALSE_ON_ZERO(coffSize);
 
         DFR_LOCAL(KERNEL32, GetModuleHandleW)
-        DFR_LOCAL(KERNEL32, GetProcAddress)
+            DFR_LOCAL(KERNEL32, GetProcAddress)
 
-        DFR_LOCAL(MSVCRT, sprintf)
-        DFR_LOCAL(MSVCRT, memcpy)
-        DFR_LOCAL(MSVCRT, memset)
-        DFR_LOCAL(MSVCRT, malloc)
-        DFR_LOCAL(MSVCRT, strlen)
-        DFR_LOCAL(MSVCRT, strcmp)
-        DFR_LOCAL(MSVCRT, free)
+            DFR_LOCAL(MSVCRT, sprintf)
+            DFR_LOCAL(MSVCRT, memcpy)
+            DFR_LOCAL(MSVCRT, memset)
+            DFR_LOCAL(MSVCRT, malloc)
+            DFR_LOCAL(MSVCRT, strlen)
+            DFR_LOCAL(MSVCRT, strcmp)
+            DFR_LOCAL(MSVCRT, free)
 
-        PIMAGE_SECTION_HEADER sectionPtr          = NULL;
-        PIMAGE_SECTION_HEADER firstSection        = NULL;
-        PIMAGE_FILE_HEADER    coffBase            = NULL;
-        PIMAGE_RELOCATION     relocationPtr       = NULL;
+            PIMAGE_SECTION_HEADER sectionPtr = NULL;
+        PIMAGE_SECTION_HEADER firstSection = NULL;
+        PIMAGE_FILE_HEADER    coffBase = NULL;
+        PIMAGE_RELOCATION     relocationPtr = NULL;
 
-        PIMAGE_SYMBOL         coffSymbolPtr       = NULL;
-        PIMAGE_SYMBOL         tmpSymbolPtr        = NULL;
+        PIMAGE_SYMBOL         coffSymbolPtr = NULL;
+        PIMAGE_SYMBOL         tmpSymbolPtr = NULL;
 
-        PVOID                 symbolTable         = NULL;
-        PVOID                 functionPtr         = NULL;
-        PVOID                 tmpPtr              = NULL;
+        PVOID                 symbolTable = NULL;
+        PVOID                 functionPtr = NULL;
+        PVOID                 tmpPtr = NULL;
 
-        DWORD                 oldProtect          = 0;
+        DWORD                 oldProtect = 0;
 
-        SIZE_T                counter              = 0;
-        SIZE_T                relocationCount      = 0;
-        SIZE_T                relocationIterCount  = 0;
+        SIZE_T                counter = 0;
+        SIZE_T                relocationCount = 0;
+        SIZE_T                relocationIterCount = 0;
         SIZE_T                functionMappingCount = 0;
 
-        UINT64                offsetValue         = 0;
+        UINT64                offsetValue = 0;
 
-        CHAR*                 symbolName          = NULL;
+        CHAR* symbolName = NULL;
 
-        VOID**                sectionMapping      = NULL;
-        VOID**                functionMapping     = NULL;
+        VOID** sectionMapping = NULL;
+        VOID** functionMapping = NULL;
 
         BOOL                  bResult = FALSE;
 
@@ -126,7 +126,7 @@ extern "C" {
 
         PRINT("Entry function name: %s\n", functionName);
 
-        void(__cdecl * go) (CHAR* arg, INT argSize);
+        void(__cdecl * go) (CHAR * arg, INT argSize);
 
         if (!g_if && !InitInternalFunctionsDynamic()) {
             BeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
@@ -139,10 +139,10 @@ extern "C" {
 #endif // End 32-bit
 
 #ifdef _DEBUG
-        coffBase = (PIMAGE_FILE_HEADER) rawCoff;
+        coffBase = (PIMAGE_FILE_HEADER)rawCoff;
 #else
         /* Cast the header */
-        coffBase = (PIMAGE_FILE_HEADER) coffData;
+        coffBase = (PIMAGE_FILE_HEADER)coffData;
 #endif
         /* Sanity check the BOF */
         if (!isValidCoff(coffData)) {
@@ -151,8 +151,8 @@ extern "C" {
         }
 
         /* Find the symbol table */
-        coffSymbolPtr = (PIMAGE_SYMBOL)((ULONG_PTR) coffBase + (ULONG_PTR) coffBase->PointerToSymbolTable);
-        symbolTable = (UCHAR*)((ULONG_PTR) coffSymbolPtr + (SIZE_T)(coffBase->NumberOfSymbols * IMAGE_SIZEOF_SYMBOL));
+        coffSymbolPtr = (PIMAGE_SYMBOL)((ULONG_PTR)coffBase + (ULONG_PTR)coffBase->PointerToSymbolTable);
+        symbolTable = (UCHAR*)((ULONG_PTR)coffSymbolPtr + (SIZE_T)(coffBase->NumberOfSymbols * IMAGE_SIZEOF_SYMBOL));
 
         /* Print debug information */
         PRINT("Machine               : 0x%X\n", coffBase->Machine);
@@ -166,7 +166,7 @@ extern "C" {
 
         TracingBeaconPrintf(CALLBACK_OUTPUT, "Allocating sectionMapping");
 
-        sectionMapping = (VOID**) malloc(sizeof(PVOID) * (coffBase->NumberOfSections + 1));
+        sectionMapping = (VOID**)malloc(sizeof(PVOID) * (coffBase->NumberOfSections + 1));
         if (sectionMapping == NULL) {
             PRINT("Failed to allocate sectionMapping\n");
             goto Cleanup;
@@ -175,7 +175,7 @@ extern "C" {
         __stosb((PBYTE)sectionMapping, 0, sizeof(PVOID) * (coffBase->NumberOfSections + 1));
 
         /* First section header is right after FILE_HEADER + OptionalHeader */
-        firstSection = (PIMAGE_SECTION_HEADER)((ULONG_PTR) coffBase + IMAGE_SIZEOF_FILE_HEADER + coffBase->SizeOfOptionalHeader);
+        firstSection = (PIMAGE_SECTION_HEADER)((ULONG_PTR)coffBase + IMAGE_SIZEOF_FILE_HEADER + coffBase->SizeOfOptionalHeader);
 
         /* Handle the allocation and copying of the sections */
         for (counter = 0; counter < coffBase->NumberOfSections; counter++) {
@@ -226,7 +226,7 @@ extern "C" {
                 continue;
             }
 
-            relocationPtr = (PIMAGE_RELOCATION)((ULONG_PTR) coffBase + sectionPtr->PointerToRelocations);
+            relocationPtr = (PIMAGE_RELOCATION)((ULONG_PTR)coffBase + sectionPtr->PointerToRelocations);
 
             /* Process relocations */
             for (relocationIterCount = 0;
@@ -265,7 +265,7 @@ extern "C" {
                 if (isCoffSymbolLocallyDefined(tmpSymbolPtr)) {
                     /* Local symbol */
                     functionPtr = sectionMapping[tmpSymbolPtr->SectionNumber - 1];
-                    functionPtr = (PVOID) ((ULONG_PTR) functionPtr + tmpSymbolPtr->Value);
+                    functionPtr = (PVOID)((ULONG_PTR)functionPtr + tmpSymbolPtr->Value);
 
                     PRINT("\t\t Function ptr : %p", functionPtr);
                 }
@@ -295,45 +295,45 @@ extern "C" {
 
                 /* Type == 1 relocation is the 64-bit VA of the relocation target */
                 if (relocationPtr->Type == IMAGE_REL_AMD64_ADDR64) {
-                    memcpy(&offsetValue, (PVOID) (((ULONG_PTR) sectionMapping[counter]) + relocationPtr->VirtualAddress), sizeof(UINT64));
+                    memcpy(&offsetValue, (PVOID)(((ULONG_PTR)sectionMapping[counter]) + relocationPtr->VirtualAddress), sizeof(UINT64));
                     PRINT("\tReadin offsetValue : 0x%llX\n", offsetValue);
-                    offsetValue += (UINT64) functionPtr;
+                    offsetValue += (UINT64)functionPtr;
                     PRINT("\tModified offsetValue : 0x%llX Base Address: %p\n", offsetValue, functionPtr);
-                    memcpy((PVOID) (((ULONG_PTR) sectionMapping[counter]) + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT64));
+                    memcpy((PVOID)(((ULONG_PTR)sectionMapping[counter]) + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT64));
                 }
                 /* This is Type == 3 relocation code */
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_ADDR32NB) {
-                    memcpy(&offsetValue, (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\tReadin offsetValue : 0x%0llX\n", offsetValue);
-                    PRINT("\t\tReferenced Section: 0x%llX\n", (ULONG_PTR) sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue);
-                    PRINT("\t\tEnd of Relocation Bytes: 0x%llX\n", ((ULONG_PTR) sectionMapping[counter]) + relocationPtr->VirtualAddress + 4);
-                    if (((CHAR*)((ULONG_PTR) sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4)) > 0xffffffff) {
+                    PRINT("\t\tReferenced Section: 0x%llX\n", (ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue);
+                    PRINT("\t\tEnd of Relocation Bytes: 0x%llX\n", ((ULONG_PTR)sectionMapping[counter]) + relocationPtr->VirtualAddress + 4);
+                    if (((CHAR*)((ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4)) > 0xffffffff) {
                         PRINT("Relocations > 4 gigs away, exiting\n");
                         goto Cleanup;
                     }
-                    offsetValue = ((CHAR*)((ULONG_PTR) sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
+                    offsetValue = ((CHAR*)((ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
                     offsetValue += coffSymbolPtr[relocationPtr->SymbolTableIndex].Value;
-                    PRINT("\tSetting 0x%p to offsetValue: 0x%llX\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(INT32));
+                    PRINT("\tSetting 0x%p to offsetValue: 0x%llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(INT32));
                 } /* This is Type == 4 relocation code, this is either a relocation to a global or imported symbol */
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32) {
                     offsetValue = 0;
 
-                    memcpy(&offsetValue, (PVOID) ((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%llX\n", offsetValue);
 
-                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4)) > UINT_MAX) {
+                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4)) > UINT_MAX) {
                         PRINT("Relocations > 4 gigs away, exiting\n");
                         goto Cleanup;
                     }
 
                     offsetValue += ((ULONG_PTR)functionPtr - ((SIZE_T)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%0llX\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), (PVOID) & offsetValue, sizeof(UINT32));
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%0llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), (PVOID)&offsetValue, sizeof(UINT32));
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_1) {
                     offsetValue = 0;
-                    memcpy(&offsetValue, (PVOID)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%X\n", offsetValue);
 
                     if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 1)) > UINT_MAX) {
@@ -342,12 +342,12 @@ extern "C" {
                     }
 
                     offsetValue += (size_t)functionPtr - ((size_t)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 1);
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%llX\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
                     memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_2) {
                     offsetValue = 0;
-                    memcpy(&offsetValue, (PVOID)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%X\n", offsetValue);
 
                     if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 2)) > UINT_MAX) {
@@ -355,51 +355,51 @@ extern "C" {
                         goto Cleanup;
                     }
 
-                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 2));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
+                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 2));
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_3) {
                     offsetValue = 0;
-                    memcpy(&offsetValue, (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%X\n", offsetValue);
 
-                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 3)) > UINT_MAX) {
+                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 3)) > UINT_MAX) {
                         PRINT("Relocations > 4 gigs away, exiting\n");
                         goto Cleanup;
                     }
 
-                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 3));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
+                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 3));
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_4) {
                     offsetValue = 0;
-                    memcpy(&offsetValue, (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%X\n", offsetValue);
 
-                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 4)) > UINT_MAX) {
+                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 4)) > UINT_MAX) {
                         PRINT("Relocations > 4 gigs away, exiting\n");
                         goto Cleanup;
                     }
 
-                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 4));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
+                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 4));
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_5) {
                     offsetValue = 0;
-                    memcpy(&offsetValue, (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
+                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
                     PRINT("\t\tReadin offset value: 0x%X\n", offsetValue);
 
-                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 5)) > UINT_MAX) {
+                    if (llabs((LONGLONG)functionPtr - (LONGLONG)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 5)) > UINT_MAX) {
                         PRINT("Relocations > 4 gigs away, exiting\n");
                         goto Cleanup;
                     }
 
-                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 5));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID) ((ULONG_PTR) sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
+                    offsetValue += (SIZE_T)functionPtr - ((SIZE_T)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4 + 5));
+                    PRINT("\t\tSetting 0x%p to relative address: 0x%X\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(UINT32));
                 }
                 else {
                     BeaconPrintf(CALLBACK_ERROR, "No code for relocation type: %d\n", relocationPtr->Type);
@@ -490,28 +490,28 @@ extern "C" {
         datap parser;
         CHAR* functionName = NULL;
 
-        UCHAR* binData   = NULL;
-        SIZE_T coffSize  = 0;
+        UCHAR* binData = NULL;
+        SIZE_T coffSize = 0;
 
-        UCHAR* argData   = NULL;
-        SIZE_T argLen    = 0;
+        UCHAR* argData = NULL;
+        SIZE_T argLen = 0;
 
         BOOL   validCoff = FALSE;
-        BOOL   validPE   = FALSE;
-        BOOL   bResult   = FALSE;
+        BOOL   validPE = FALSE;
+        BOOL   bResult = FALSE;
 
         __stosb((PBYTE)&parser, 0, sizeof(parser));
 
         BeaconDataParse(&parser, args, len);
         binData = (UCHAR*)BeaconDataExtract(&parser, (int*)&coffSize);
         functionName = BeaconDataExtract(&parser, NULL);
-        argData      = (UCHAR*)BeaconDataExtract(&parser, (int*) &argLen);
+        argData = (UCHAR*)BeaconDataExtract(&parser, (int*)&argLen);
 
         TracingBeaconPrintf(CALLBACK_OUTPUT, "Received function name: %s\nBOF size: %llu", functionName, coffSize);
 
         /* Check if the input binary is something this BOF can run */
         validCoff = isValidCoff(binData);
-        validPE   = isValidPE(binData);
+        validPE = isValidPE(binData);
 
         /* If we can't run it, then bail */
         if (validCoff == FALSE && validPE == FALSE) {
@@ -547,12 +547,13 @@ extern "C" {
     int main(int argc, char* argv[]) {
         // Run BOF's entrypoint
         // To pack arguments for the bof use e.g.: bof::runMocked<int, short, const char*>(go, 6502, 42, "foobar");
-        bof::runMocked<char*, char*>(go, (char*) rawCoff, (char*)"go", (char*)"Hello World", 12);
+        bof::runMocked<char*, char*>(go, (char*)rawCoff, (char*)"go", (char*)"Hello World", 12);
 
         return 0;
     }
 
-    // Define unit tests
+
+// Define unit tests
 #elif defined(_GTEST)
 #include <gtest\gtest.h>
 
