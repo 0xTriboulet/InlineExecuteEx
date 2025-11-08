@@ -30,7 +30,7 @@
 
 typedef struct IFEntry {
 	const UCHAR* name;   // points to string literal; no heap copy needed
-	UCHAR* ptr;    // target function pointer
+	UCHAR* ptr;          // target function pointer
 } IFEntry;
 
 IFEntry* g_if = NULL;

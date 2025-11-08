@@ -52,12 +52,14 @@ extern "C" {
             || symbol->StorageClass == IMAGE_SYM_CLASS_EXTERNAL_DEF;
     }
 
+    /* Check if the string starts with the substring */
     BOOL startsWith(const char* string, const char* substring) {
         DFR_LOCAL(MSVCRT, strncmp)
         DFR_LOCAL(MSVCRT, strlen)
         return strncmp(string, substring, strlen(substring)) == 0;
     }
 
+    /* Resolve the symbol */
     PVOID resolveSymbol(CHAR* symbolName) {
 
         RETURN_NULL_ON_NULL(symbolName)
@@ -99,7 +101,10 @@ extern "C" {
                 local = symbolName + strlen(PREPENDSYMBOL);
 
             UCHAR* p = IF_Get(local);
-            if (p) return p;
+            if (p != NULL)
+            {
+                return p;
+            }
             // fall through if not found
         }
         else if (strncmp(symbolName, PREPENDSYMBOL, strlen(PREPENDSYMBOL)) == 0) {
@@ -133,10 +138,26 @@ extern "C" {
         return functionPtr;
     }
 
+    /* Get the absolute value of a LONGLONG */
     LONGLONG llabs(LONGLONG n) {
         return (n < 0) ? -n : n;
     }
 
+    /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
+    BOOL isValidCoff(UCHAR* coffData) {
+        PIMAGE_FILE_HEADER coffBase = NULL;
+
+        /* Cast the header */
+        coffBase = (PIMAGE_FILE_HEADER)coffData;
+
+        /* Sanity check the BOF */
+        if (coffBase->Machine == MACHINE_CODE) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    /* Run the COFF */
     BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T coffSize, UCHAR* argData, SIZE_T argLen) {
 
         /* Input validation */
@@ -212,7 +233,7 @@ extern "C" {
         coffBase = (PIMAGE_FILE_HEADER) coffData;
 #endif
         /* Sanity check the BOF */
-        if (coffBase->Machine != MACHINE_CODE) {
+        if (!isValidCoff(coffData)) {
             BeaconPrintf(CALLBACK_ERROR, "Received invalid BOF: 0x%X", coffBase->Machine);
             return bResult;
         }
