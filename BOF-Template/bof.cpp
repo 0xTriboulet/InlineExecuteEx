@@ -19,129 +19,8 @@ extern "C" {
 #include "sleepmask.h"
 #include "bof_helpers.h"
 
-    /* Map IMAGE_SECTION_HEADER.Characteristics->PAGE_* protection */
-    DWORD secCharsToProtect(DWORD ch)
-    {
-        BOOL canRead = (ch & IMAGE_SCN_MEM_READ) != 0;
-        BOOL canWrite = (ch & IMAGE_SCN_MEM_WRITE) != 0;
-        BOOL canExec = (ch & IMAGE_SCN_MEM_EXECUTE) != 0;
-
-        DWORD prot = 0;
-        if (canExec) {
-            prot = canWrite ? PAGE_EXECUTE_READWRITE
-                : canRead ? PAGE_EXECUTE_READ
-                : PAGE_EXECUTE;              // rare, but valid
-        }
-        else {
-            prot = canWrite ? PAGE_READWRITE
-                : canRead ? PAGE_READONLY
-                : PAGE_NOACCESS;            // e.g., purely discardable
-        }
-
-        return prot;
-    }
-
-    /* Check if symbol is local ( if > 0 symbol is local ) */
-    BOOL isSymbolLocallyDefined(PIMAGE_SYMBOL symbol) {
-        return symbol->SectionNumber > 0;
-    }
-
-    /* Check if symbol is external */
-    BOOL isSymbolExternallyDefined(PIMAGE_SYMBOL symbol) {
-        return symbol->StorageClass == IMAGE_SYM_CLASS_EXTERNAL
-            || symbol->StorageClass == IMAGE_SYM_CLASS_EXTERNAL_DEF;
-    }
-
-    /* Check if the string starts with the substring */
-    BOOL startsWith(const char* string, const char* substring) {
-        DFR_LOCAL(MSVCRT, strncmp)
-        DFR_LOCAL(MSVCRT, strlen)
-        return strncmp(string, substring, strlen(substring)) == 0;
-    }
-
-    /* Resolve the symbol */
-    PVOID resolveSymbol(CHAR* symbolName) {
-
-        RETURN_NULL_ON_NULL(symbolName)
-
-        DFR_LOCAL(MSVCRT, strncmp)
-        DFR_LOCAL(MSVCRT, strcmp)
-        DFR_LOCAL(MSVCRT, strlen)
-        DFR_LOCAL(MSVCRT, memcpy)
-        DFR_LOCAL(MSVCRT, strtok)
-
-        DFR_LOCAL(KERNEL32, LoadLibraryA)
-        DFR_LOCAL(KERNEL32, GetProcAddress)
-
-        PVOID   functionPtr = NULL;
-
-        CHAR*   localLib    = NULL;
-        CHAR*   localFunc   = NULL;
-
-        INT     counter     = 0;
-
-        HMODULE hModule     = NULL;
-
-        CHAR  localBuffer[1024];
-
-        __stosb((PBYTE)&localBuffer, 0, sizeof(localBuffer));
-        
-        memcpy(localBuffer, symbolName, strlen(symbolName)); // We're not copying the null-byte here, doesn't matter though
-        if (startsWith(symbolName, PREPENDSYMBOL "Beacon")
-            || startsWith(symbolName, PREPENDSYMBOL "toWideChar")
-            || startsWith(symbolName, PREPENDSYMBOL "GetProcAddress")
-            || startsWith(symbolName, PREPENDSYMBOL "LoadLibraryA")
-            || startsWith(symbolName, PREPENDSYMBOL "GetModuleHandleA")
-            || startsWith(symbolName, PREPENDSYMBOL "FreeLibrary")
-            || strcmp(symbolName, "__C_specific_handler") == 0
-            )
-        {
-            const char* local = symbolName;
-            if (strncmp(symbolName, PREPENDSYMBOL, strlen(PREPENDSYMBOL)) == 0)
-                local = symbolName + strlen(PREPENDSYMBOL);
-
-            UCHAR* p = IF_Get(local);
-            if (p != NULL)
-            {
-                return p;
-            }
-            // fall through if not found
-        }
-        else if (strncmp(symbolName, PREPENDSYMBOL, strlen(PREPENDSYMBOL)) == 0) {
-            /* Move pointer past the prepend symbol*/
-            localLib = localBuffer + strlen(PREPENDSYMBOL);
-
-            /* Parse until the $ character */
-            localLib  = strtok(localLib, "$");
-
-            /* Parse starting from the $ character */
-            localFunc = strtok(NULL, "$");
-            PRINT("\t\tLibrary: %s\n", localLib);
-
-            localFunc = strtok(localFunc, "@");
-            PRINT("\t\tFunction: %s\n", localFunc);
-            /* Resolve the symbols here, and set the functionPtr */
-
-            /* Load the lib and resolve the function */
-            hModule = LoadLibraryA(localLib);
-            if (hModule == NULL) {
-                goto Cleanup;
-            }
-            functionPtr = GetProcAddress(hModule, localFunc);
-            if (functionPtr == NULL) {
-                goto Cleanup;
-            }
-            PRINT("\t\Function address: 0x%p\n", functionPtr);
-        }
-
-    Cleanup:
-        return functionPtr;
-    }
-
-    /* Get the absolute value of a LONGLONG */
-    LONGLONG llabs(LONGLONG n) {
-        return (n < 0) ? -n : n;
-    }
+#include "common.h"
+#include "coff.h"
 
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
@@ -157,7 +36,40 @@ extern "C" {
         return FALSE;
     }
 
-    /* Run the COFF */
+    /* Check if the buffer points to a valid PE file */
+    BOOL isValidPE(UCHAR* peData) {
+        if (peData == NULL) {
+            return FALSE;
+        }
+
+        PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)peData;
+        PIMAGE_NT_HEADERS ntHeaders = NULL;
+        BOOL bResult = FALSE;
+
+        /* Check for MZ signature */
+        if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
+            goto Cleanup;
+        }
+
+        /* Verify e_lfanew is within a reasonable range */
+        if (dosHeader->e_lfanew == 0 || dosHeader->e_lfanew > 0x1000) {
+            goto Cleanup;
+        }
+
+        ntHeaders = (PIMAGE_NT_HEADERS)(peData + dosHeader->e_lfanew);
+
+        /* Check for PE\0\0 signature */
+        if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) {
+            goto Cleanup;
+        }
+        
+        bResult = TRUE;
+
+    Cleanup:
+        return bResult;
+    }
+
+    /* Run the COFF. Returns TRUE on success, and FALSE on failure. */
     BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T coffSize, UCHAR* argData, SIZE_T argLen) {
 
         /* Input validation */
@@ -350,16 +262,16 @@ extern "C" {
                 }
 
                 /* Check if symbol is local */
-                if (isSymbolLocallyDefined(tmpSymbolPtr)) {
+                if (isCoffSymbolLocallyDefined(tmpSymbolPtr)) {
                     /* Local symbol */
                     functionPtr = sectionMapping[tmpSymbolPtr->SectionNumber - 1];
                     functionPtr = (PVOID) ((ULONG_PTR) functionPtr + tmpSymbolPtr->Value);
 
                     PRINT("\t\t Function ptr : %p", functionPtr);
                 }
-                else if (isSymbolExternallyDefined(tmpSymbolPtr)) {
+                else if (isCoffSymbolExternallyDefined(tmpSymbolPtr)) {
                     /* External symbol that we need to resolve */
-                    functionPtr = resolveSymbol(symbolName);
+                    functionPtr = resolveCoffSymbol(symbolName);
                     if (functionPtr == NULL) {
                         BeaconPrintf(CALLBACK_ERROR, "Failed to resolve symbol %s", symbolName);
                         goto Cleanup;
@@ -578,28 +490,55 @@ extern "C" {
         datap parser;
         CHAR* functionName = NULL;
 
-        UCHAR* coffData = NULL;
-        SIZE_T coffSize = 0;
+        UCHAR* binData   = NULL;
+        SIZE_T coffSize  = 0;
 
-        UCHAR* argData = NULL;
-        SIZE_T argLen  = 0;
+        UCHAR* argData   = NULL;
+        SIZE_T argLen    = 0;
+
+        BOOL   validCoff = FALSE;
+        BOOL   validPE   = FALSE;
+        BOOL   bResult   = FALSE;
 
         __stosb((PBYTE)&parser, 0, sizeof(parser));
 
         BeaconDataParse(&parser, args, len);
-        coffData     = (UCHAR*)BeaconDataExtract(&parser, (int*)&coffSize);
+        binData = (UCHAR*)BeaconDataExtract(&parser, (int*)&coffSize);
         functionName = BeaconDataExtract(&parser, NULL);
         argData      = (UCHAR*)BeaconDataExtract(&parser, (int*) &argLen);
 
         TracingBeaconPrintf(CALLBACK_OUTPUT, "Received function name: %s\nBOF size: %llu", functionName, coffSize);
 
-        if (!runCoff(functionName, coffData, coffSize, argData, argLen)) {
-            BeaconPrintf(CALLBACK_ERROR, "Failed!");
+        /* Check if the input binary is something this BOF can run */
+        validCoff = isValidCoff(binData);
+        validPE   = isValidPE(binData);
+
+        /* If we can't run it, then bail */
+        if (validCoff == FALSE && validPE == FALSE) {
+            BeaconPrintf(CALLBACK_ERROR, "Invalid binary!");
+            goto Cleanup;
+        }
+
+        if (validCoff == TRUE && runCoff(functionName, binData, coffSize, argData, argLen)) {
+            /* If it's a COFF and we successfully ran it */
+            bResult = TRUE;
+        }
+        else if (validCoff == TRUE) {
+            /* If it's a PE and we successfully ran it */
+            bResult = TRUE;
         }
         else {
+            /* Loading or running failed somehow */
+            BeaconPrintf(CALLBACK_ERROR, "Failed!");
+        }
+
+        /* Everything worked! */
+        if (bResult == TRUE) {
             BeaconPrintf(CALLBACK_OUTPUT, "[+] Success!");
         }
 
+    Cleanup:
+        return;
     }
 
     // Define a main function for the bebug build
