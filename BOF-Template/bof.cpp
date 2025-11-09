@@ -540,7 +540,7 @@ extern "C" {
     Cleanup:
         return;
     }
-
+}
     // Define a main function for the bebug build
 #if defined(_DEBUG) && !defined(_GTEST)
 
@@ -559,7 +559,8 @@ extern "C" {
 
     TEST(BofTest, Test1) {
         std::vector<bof::output::OutputEntry> got =
-            bof::runMocked<>(go);
+            bof::runMocked<char*, char*>(go, (char*)rawCoff, (char*)"go", (char*)"Hello World", 12);
+
         std::vector<bof::output::OutputEntry> expected = {
             {CALLBACK_OUTPUT, "System Directory: C:\\Windows\\system32"}
         };
@@ -570,4 +571,4 @@ extern "C" {
         ASSERT_STRCASEEQ(expected[0].output.c_str(), got[0].output.c_str());
     }
 #endif
-}
+
