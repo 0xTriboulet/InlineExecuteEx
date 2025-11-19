@@ -78,43 +78,43 @@ extern "C" {
         RETURN_FALSE_ON_ZERO(coffSize);
 
         DFR_LOCAL(KERNEL32, GetModuleHandleW)
-            DFR_LOCAL(KERNEL32, GetProcAddress)
+        DFR_LOCAL(KERNEL32, GetProcAddress)
 
-            DFR_LOCAL(MSVCRT, sprintf)
-            DFR_LOCAL(MSVCRT, memcpy)
-            DFR_LOCAL(MSVCRT, memset)
-            DFR_LOCAL(MSVCRT, malloc)
-            DFR_LOCAL(MSVCRT, strlen)
-            DFR_LOCAL(MSVCRT, strcmp)
-            DFR_LOCAL(MSVCRT, free)
+        DFR_LOCAL(MSVCRT, sprintf)
+        DFR_LOCAL(MSVCRT, memcpy)
+        DFR_LOCAL(MSVCRT, memset)
+        DFR_LOCAL(MSVCRT, malloc)
+        DFR_LOCAL(MSVCRT, strlen)
+        DFR_LOCAL(MSVCRT, strcmp)
+        DFR_LOCAL(MSVCRT, free)
 
-            PIMAGE_SECTION_HEADER sectionPtr = NULL;
-        PIMAGE_SECTION_HEADER firstSection = NULL;
-        PIMAGE_FILE_HEADER    coffBase = NULL;
-        PIMAGE_RELOCATION     relocationPtr = NULL;
+        PIMAGE_SECTION_HEADER sectionPtr           = NULL;
+        PIMAGE_SECTION_HEADER firstSection         = NULL;
+        PIMAGE_FILE_HEADER    coffBase             = NULL;
+        PIMAGE_RELOCATION     relocationPtr        = NULL;
 
-        PIMAGE_SYMBOL         coffSymbolPtr = NULL;
-        PIMAGE_SYMBOL         tmpSymbolPtr = NULL;
+        PIMAGE_SYMBOL         coffSymbolPtr        = NULL;
+        PIMAGE_SYMBOL         tmpSymbolPtr         = NULL;
 
-        PVOID                 symbolTable = NULL;
-        PVOID                 functionPtr = NULL;
-        PVOID                 tmpPtr = NULL;
+        PVOID                 symbolTable          = NULL;
+        PVOID                 functionPtr          = NULL;
+        PVOID                 tmpPtr               = NULL;
 
-        DWORD                 oldProtect = 0;
+        DWORD                 oldProtect           = 0;
 
-        SIZE_T                counter = 0;
-        SIZE_T                relocationCount = 0;
-        SIZE_T                relocationIterCount = 0;
+        SIZE_T                counter              = 0;
+        SIZE_T                relocationCount      = 0;
+        SIZE_T                relocationIterCount  = 0;
         SIZE_T                functionMappingCount = 0;
 
-        UINT64                offsetValue = 0;
+        UINT64                offsetValue          = 0;
 
-        CHAR* symbolName = NULL;
+        CHAR* symbolName       = NULL;
 
-        VOID** sectionMapping = NULL;
+        VOID** sectionMapping  = NULL;
         VOID** functionMapping = NULL;
 
-        BOOL                  bResult = FALSE;
+        BOOL           bResult = FALSE;
 
         CHAR shortNameBuffer[9];
         CHAR functionNameBuffer[MAX_PATH];
@@ -538,6 +538,9 @@ extern "C" {
         }
 
     Cleanup:
+        if (g_if != NULL) {
+            BeaconVirtualFree(g_if, 0, MEM_RELEASE);
+        }
         return;
     }
 }
