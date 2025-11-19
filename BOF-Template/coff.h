@@ -99,6 +99,52 @@ extern "C" {
             PRINT("\t\nFunction address: 0x%p\n", functionPtr);
         }
 
+        /* Check one more time without the prepended import symbol */
+        if (startsWith(symbolName, "Beacon")
+            || startsWith(symbolName, "toWideChar")
+            || startsWith(symbolName, "GetProcAddress")
+            || startsWith(symbolName, "LoadLibraryA")
+            || startsWith(symbolName, "GetModuleHandleA")
+            || startsWith(symbolName, "FreeLibrary")
+            || strcmp(symbolName, "__C_specific_handler") == 0
+            )
+        {
+            const char* local = symbolName;
+
+            UCHAR* p = IF_Get(local);
+            if (p != NULL)
+            {
+                return p;
+            }
+            // fall through if not found
+        }
+        else {
+            /* Move pointer past the prepend symbol*/
+            localLib = localBuffer;
+
+            /* Parse until the $ character */
+            localLib = strtok(localLib, "$");
+
+            /* Parse starting from the $ character */
+            localFunc = strtok(NULL, "$");
+            PRINT("\t\tLibrary: %s\n", localLib);
+
+            localFunc = strtok(localFunc, "@");
+            PRINT("\t\tFunction: %s\n", localFunc);
+            /* Resolve the symbols here, and set the functionPtr */
+
+            /* Load the lib and resolve the function */
+            hModule = LoadLibraryA(localLib);
+            if (hModule == NULL) {
+                goto Cleanup;
+            }
+            functionPtr = GetProcAddress(hModule, localFunc);
+            if (functionPtr == NULL) {
+                goto Cleanup;
+            }
+            PRINT("\t\nFunction address: 0x%p\n", functionPtr);
+        }
+
     Cleanup:
         return functionPtr;
     }
