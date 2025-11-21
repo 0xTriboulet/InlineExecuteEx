@@ -50,6 +50,12 @@
     <ClInclude Include="bof_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="coff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Makefile" />
