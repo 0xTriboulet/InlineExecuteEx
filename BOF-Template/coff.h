@@ -21,6 +21,65 @@ extern "C" {
         BOOL   isImport;
     } SYMBOL_RESOLUTION, * PSYMBOL_RESOLUTION;
 
+    SIZE_T jmpIdx = 2;                                              // Start patching at jmpRax[2]
+    UCHAR  jmpStub[] = {                                            // jump stub used in jump table
+        0x48, 0xB8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // mov rax, <ADDR>
+        0xFF, 0xE0,                                                 // jmp rax
+        0x00, 0x00, 0x00, 0x00
+    };
+
+    /* Add an entry to the jump table */
+    BOOL addJumpThunk(
+        PBYTE  jumpTable,
+        PBYTE jmpRaxStub,
+        SIZE_T jmpRaxStubLen,
+        SIZE_T jmpRaxIdx,
+        PVOID  functionPtr,
+        ULONG_PTR ripInstrAddr,
+        PTHUNK_RESULT thunkResult
+    ) {
+        RETURN_FALSE_ON_NULL(jumpTable);
+        RETURN_FALSE_ON_NULL(jmpRaxStub);
+        RETURN_FALSE_ON_ZERO(jmpRaxStubLen);
+        RETURN_FALSE_ON_ZERO(jmpRaxIdx);
+        RETURN_FALSE_ON_NULL(functionPtr);
+        RETURN_FALSE_ON_ZERO(ripInstrAddr);
+        RETURN_FALSE_ON_NULL(thunkResult);
+
+        DFR_LOCAL(MSVCRT, memcpy)
+
+        PVOID fPtr = functionPtr;
+
+        //
+        // 1. Copy the stub into the jump table
+        //
+        memcpy(jumpTable, jmpRaxStub, jmpRaxStubLen);
+
+        //
+        // 2. Patch the real function address into the thunk
+        //
+        memcpy(jumpTable + jmpRaxIdx, &fPtr, sizeof(PVOID));
+
+        //
+        // 3. Compute disp32 for: jmp rel32 / call rel32
+        //
+        //    disp32 = (thunk_address) - (rip_of_next_instruction)
+        //
+        ULONG_PTR ripNext = ripInstrAddr + 4;  // instruction length = 4 for REL32 reloc
+        ULONG_PTR thunkAddr = (ULONG_PTR)jumpTable;
+
+        INT64 delta = (INT64)thunkAddr - (INT64)ripNext;
+
+        thunkResult->rel32 = (UINT32)delta;
+
+        //
+        // 4. Advance jump table pointer for next thunk
+        //
+        thunkResult->nextTable = (PVOID)((ULONG_PTR)jumpTable + jmpRaxStubLen * 2);
+
+        return TRUE;
+    }
+
     /* Check if symbol is local ( if > 0 symbol is local ) */
     BOOL isCoffSymbolLocallyDefined(PIMAGE_SYMBOL symbol) {
         return symbol->SectionNumber > 0;

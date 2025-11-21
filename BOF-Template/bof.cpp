@@ -22,66 +22,6 @@ extern "C" {
 #include "common.h"
 #include "coff.h"
 
-
-
-    SIZE_T jmpIdx    = 2;                                           // Start patching at jmpRax[2]
-    UCHAR  jmpStub[] = {
-        0x48, 0xB8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // mov rax, <ADDR>
-        0xFF, 0xE0,                                                 // jmp rax
-        0x00, 0x00, 0x00, 0x00
-    };
-
-    BOOL buildJumpThunk(
-        PBYTE  jumpTable,
-        PBYTE jmpRaxStub,
-        SIZE_T jmpRaxStubLen,
-        SIZE_T jmpRaxIdx,
-        PVOID  functionPtr,
-        ULONG_PTR ripInstrAddr,
-        PTHUNK_RESULT thunkResult
-    ) {
-        RETURN_FALSE_ON_NULL(jumpTable);
-        RETURN_FALSE_ON_NULL(jmpRaxStub);
-        RETURN_FALSE_ON_ZERO(jmpRaxStubLen);
-        RETURN_FALSE_ON_ZERO(jmpRaxIdx);
-        RETURN_FALSE_ON_NULL(functionPtr);
-        RETURN_FALSE_ON_ZERO(ripInstrAddr);
-        RETURN_FALSE_ON_NULL(thunkResult);
-
-        DFR_LOCAL(MSVCRT, memcpy)
-
-        PVOID fPtr = functionPtr;
-
-        //
-        // 1. Copy the stub into the jump table
-        //
-        memcpy(jumpTable, jmpRaxStub, jmpRaxStubLen);
-
-        //
-        // 2. Patch the real function address into the thunk
-        //
-        memcpy(jumpTable + jmpRaxIdx, &fPtr, sizeof(PVOID));
-
-        //
-        // 3. Compute disp32 for: jmp rel32 / call rel32
-        //
-        //    disp32 = (thunk_address) - (rip_of_next_instruction)
-        //
-        ULONG_PTR ripNext = ripInstrAddr + 4;  // instruction length = 4 for REL32 reloc
-        ULONG_PTR thunkAddr = (ULONG_PTR)jumpTable;
-
-        INT64 delta = (INT64)thunkAddr - (INT64)ripNext;
-
-        thunkResult->rel32 = (UINT32)delta;
-
-        //
-        // 4. Advance jump table pointer for next thunk
-        //
-        thunkResult->nextTable = (PVOID)((ULONG_PTR)jumpTable + jmpRaxStubLen * 2);
-
-        return TRUE;
-    }
-
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
         PIMAGE_FILE_HEADER coffBase = NULL;
@@ -408,11 +348,15 @@ extern "C" {
 
                     if (functionMappingCount > 0 && functionPtr == &functionMapping[functionMappingCount - 1]
                         && symbolResolution.isImport  == FALSE)
-                    {
+                    { // Here we're checking if the __imp prefix was used, if not we need special handling
 
+                        /* get the actual function pointer */
                         functionPtr = functionMapping[functionMappingCount - 1];
 
-                        if (!buildJumpThunk(
+                        PRINT("\t\Adding jumpTable Thunk: 0x%p\n", functionPtr);
+
+                        /* add a jump stub to our function in the jump table */
+                        if (!addJumpThunk(
                             (PBYTE)jumpTable,
                             (PBYTE)jmpStub,
                             sizeof(jmpStub),
@@ -424,22 +368,23 @@ extern "C" {
                             PRINT("\t\t Failed adding entry to the jumpTable");
                             goto Cleanup;
                         }
-                        // write back the computed disp32 to the instruction
+                        /* write back the computed disp32 to the instruction */
                         memcpy(
                             (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress),
                             &thunkResult.rel32,
                             sizeof(UINT32)
                         );
 
-                        // update jumpTable pointer for next thunk
+                        /* update jumpTable pointer for next thunk */
                         jumpTable = thunkResult.nextTable;
                     }
                     else {
+                        /* normal handling, probably a C BOF */
                         offsetValue += ((ULONG_PTR)functionPtr - ((SIZE_T)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
                         PRINT("\t\tSetting 0x%p to relative address: 0x%0llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
                         memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), (PVOID)&offsetValue, sizeof(UINT32));
                     }
-                }
+                } /* And everything else is back to your regularly scheduled program (ie all COFF loaders do this) */
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_1) {
                     offsetValue = 0;
                     memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
