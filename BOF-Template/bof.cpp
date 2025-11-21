@@ -22,6 +22,66 @@ extern "C" {
 #include "common.h"
 #include "coff.h"
 
+
+
+    SIZE_T jmpIdx    = 2;                                           // Start patching at jmpRax[2]
+    UCHAR  jmpStub[] = {
+        0x48, 0xB8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // mov rax, <ADDR>
+        0xFF, 0xE0,                                                 // jmp rax
+        0x00, 0x00, 0x00, 0x00
+    };
+
+    BOOL buildJumpThunk(
+        PBYTE  jumpTable,
+        PBYTE jmpRaxStub,
+        SIZE_T jmpRaxStubLen,
+        SIZE_T jmpRaxIdx,
+        PVOID  functionPtr,
+        ULONG_PTR ripInstrAddr,
+        PTHUNK_RESULT thunkResult
+    ) {
+        RETURN_FALSE_ON_NULL(jumpTable);
+        RETURN_FALSE_ON_NULL(jmpRaxStub);
+        RETURN_FALSE_ON_ZERO(jmpRaxStubLen);
+        RETURN_FALSE_ON_ZERO(jmpRaxIdx);
+        RETURN_FALSE_ON_NULL(functionPtr);
+        RETURN_FALSE_ON_ZERO(ripInstrAddr);
+        RETURN_FALSE_ON_NULL(thunkResult);
+
+        DFR_LOCAL(MSVCRT, memcpy)
+
+        PVOID fPtr = functionPtr;
+
+        //
+        // 1. Copy the stub into the jump table
+        //
+        memcpy(jumpTable, jmpRaxStub, jmpRaxStubLen);
+
+        //
+        // 2. Patch the real function address into the thunk
+        //
+        memcpy(jumpTable + jmpRaxIdx, &fPtr, sizeof(PVOID));
+
+        //
+        // 3. Compute disp32 for: jmp rel32 / call rel32
+        //
+        //    disp32 = (thunk_address) - (rip_of_next_instruction)
+        //
+        ULONG_PTR ripNext = ripInstrAddr + 4;  // instruction length = 4 for REL32 reloc
+        ULONG_PTR thunkAddr = (ULONG_PTR)jumpTable;
+
+        INT64 delta = (INT64)thunkAddr - (INT64)ripNext;
+
+        thunkResult->rel32 = (UINT32)delta;
+
+        //
+        // 4. Advance jump table pointer for next thunk
+        //
+        thunkResult->nextTable = (PVOID)((ULONG_PTR)jumpTable + jmpRaxStubLen * 2);
+
+        return TRUE;
+    }
+
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
         PIMAGE_FILE_HEADER coffBase = NULL;
@@ -38,9 +98,8 @@ extern "C" {
 
     /* Check if the buffer points to a valid PE file */
     BOOL isValidPE(UCHAR* peData) {
-        if (peData == NULL) {
-            return FALSE;
-        }
+
+        RETURN_FALSE_ON_NULL(peData);
 
         PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)peData;
         PIMAGE_NT_HEADERS ntHeaders = NULL;
@@ -106,20 +165,28 @@ extern "C" {
         SIZE_T                relocationCount      = 0;
         SIZE_T                relocationIterCount  = 0;
         SIZE_T                functionMappingCount = 0;
+        SIZE_T                jumpTableAlloc       = 0x1000 * sizeof(jmpStub);
 
-        UINT64                offsetValue          = 0;
+        INT64                 offsetValue          = 0;
 
         CHAR* symbolName       = NULL;
 
         VOID** sectionMapping  = NULL;
         VOID** functionMapping = NULL;
+        VOID*  jumpTable       = NULL;
+        VOID*  jumpTableInit   = NULL;
 
-        BOOL           bResult = FALSE;
+        BOOL   bResult         = FALSE;
 
         CHAR shortNameBuffer[9];
         CHAR functionNameBuffer[MAX_PATH];
         CHAR specificHandlerBuffer[MAX_PATH];
 
+        SYMBOL_RESOLUTION symbolResolution;
+        THUNK_RESULT thunkResult;
+
+        __stosb((PBYTE)&thunkResult, 0, sizeof(thunkResult));
+        __stosb((PBYTE)&symbolResolution, 0, sizeof(symbolResolution));
         __stosb((PBYTE)shortNameBuffer, 0, sizeof(shortNameBuffer));
         __stosb((PBYTE)functionNameBuffer, 0, sizeof(functionNameBuffer));
         __stosb((PBYTE)specificHandlerBuffer, 0, sizeof(specificHandlerBuffer));
@@ -153,6 +220,15 @@ extern "C" {
         /* Find the symbol table */
         coffSymbolPtr = (PIMAGE_SYMBOL)((ULONG_PTR)coffBase + (ULONG_PTR)coffBase->PointerToSymbolTable);
         symbolTable = (UCHAR*)((ULONG_PTR)coffSymbolPtr + (SIZE_T)(coffBase->NumberOfSymbols * IMAGE_SIZEOF_SYMBOL));
+
+        /* Init jump table */
+        jumpTable = BeaconVirtualAlloc(NULL, jumpTableAlloc, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
+        if (jumpTable == NULL) {
+            goto Cleanup;
+        }
+
+        /* Store the original address */
+        jumpTableInit = jumpTable;
 
         /* Print debug information */
         PRINT("Machine               : 0x%X\n", coffBase->Machine);
@@ -190,8 +266,11 @@ extern "C" {
             PRINT("NumberOfRelocations  : %d\n", sectionPtr->NumberOfRelocations);
             relocationCount += sectionPtr->NumberOfRelocations;
 
+            /* Get whichever size is larger */
+            SIZE_T allocSize = sectionPtr->Misc.VirtualSize > sectionPtr->SizeOfRawData ? sectionPtr->Misc.VirtualSize : sectionPtr->SizeOfRawData;
+
             /* Make an allocation for every section */
-            sectionMapping[counter] = BeaconVirtualAlloc(NULL, sectionPtr->SizeOfRawData, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
+            sectionMapping[counter] = BeaconVirtualAlloc(NULL, allocSize, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
             if (sectionMapping[counter] == NULL) {
                 PRINT("Failed to allocate memory\n");
             }
@@ -237,6 +316,10 @@ extern "C" {
                 PRINT("\tSymbolTableIndex : 0x%X\n", relocationPtr->SymbolTableIndex);
                 PRINT("\tType             : 0x%X\n", relocationPtr->Type);
 
+                /* Ensure this is zero'd out at the top of every loop */
+                __stosb((PBYTE)&symbolResolution, 0, sizeof(symbolResolution));
+                __stosb((PBYTE)&thunkResult, 0, sizeof(thunkResult));
+
                 /* Bounds check */
                 if (relocationPtr->SymbolTableIndex >= coffBase->NumberOfSymbols) {
                     PRINT("\t[!] Bad SymbolTableIndex\n");
@@ -269,13 +352,17 @@ extern "C" {
 
                     PRINT("\t\t Function ptr : %p", functionPtr);
                 }
-                else if (isCoffSymbolExternallyDefined(tmpSymbolPtr)) {
+                else if (isCoffSymbolExternallyDefined(tmpSymbolPtr)
+                    && coffSymbolPtr[relocationPtr->SymbolTableIndex].Value == 0) {
                     /* External symbol that we need to resolve */
-                    functionPtr = resolveCoffSymbol(symbolName);
-                    if (functionPtr == NULL) {
+                    if (!resolveCoffSymbol(symbolName, &symbolResolution)) {
                         BeaconPrintf(CALLBACK_ERROR, "Failed to resolve symbol %s", symbolName);
                         goto Cleanup;
                     }
+
+                    /* Set function pointer so I don't have a bunch of refactors*/
+                    functionPtr = symbolResolution.functionPtr;
+
                     PRINT("Resolved %s at address %p", symbolName, functionPtr);
                     /* Store the address of our function pointer */
                     functionMapping[functionMappingCount] = functionPtr;
@@ -303,18 +390,10 @@ extern "C" {
                 }
                 /* This is Type == 3 relocation code */
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_ADDR32NB) {
-                    memcpy(&offsetValue, (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), sizeof(INT32));
-                    PRINT("\tReadin offsetValue : 0x%0llX\n", offsetValue);
-                    PRINT("\t\tReferenced Section: 0x%llX\n", (ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue);
-                    PRINT("\t\tEnd of Relocation Bytes: 0x%llX\n", ((ULONG_PTR)sectionMapping[counter]) + relocationPtr->VirtualAddress + 4);
-                    if (((CHAR*)((ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4)) > 0xffffffff) {
-                        PRINT("Relocations > 4 gigs away, exiting\n");
-                        goto Cleanup;
-                    }
-                    offsetValue = ((CHAR*)((ULONG_PTR)sectionMapping[coffSymbolPtr[relocationPtr->SymbolTableIndex].SectionNumber - 1] + offsetValue) - (CHAR*)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
-                    offsetValue += coffSymbolPtr[relocationPtr->SymbolTableIndex].Value;
-                    PRINT("\tSetting 0x%p to offsetValue: 0x%llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &offsetValue, sizeof(INT32));
+
+                    INT32 disp = (INT32)((ULONG_PTR)functionPtr - (ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress - 4);
+                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), &disp, sizeof(INT32));
+
                 } /* This is Type == 4 relocation code, this is either a relocation to a global or imported symbol */
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32) {
                     offsetValue = 0;
@@ -327,9 +406,39 @@ extern "C" {
                         goto Cleanup;
                     }
 
-                    offsetValue += ((ULONG_PTR)functionPtr - ((SIZE_T)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
-                    PRINT("\t\tSetting 0x%p to relative address: 0x%0llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
-                    memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), (PVOID)&offsetValue, sizeof(UINT32));
+                    if (functionMappingCount > 0 && functionPtr == &functionMapping[functionMappingCount - 1]
+                        && symbolResolution.isImport  == FALSE)
+                    {
+
+                        functionPtr = functionMapping[functionMappingCount - 1];
+
+                        if (!buildJumpThunk(
+                            (PBYTE)jumpTable,
+                            (PBYTE)jmpStub,
+                            sizeof(jmpStub),
+                            jmpIdx,
+                            functionPtr,
+                            (ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress,
+                            &thunkResult
+                        )) {
+                            PRINT("\t\t Failed adding entry to the jumpTable");
+                            goto Cleanup;
+                        }
+                        // write back the computed disp32 to the instruction
+                        memcpy(
+                            (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress),
+                            &thunkResult.rel32,
+                            sizeof(UINT32)
+                        );
+
+                        // update jumpTable pointer for next thunk
+                        jumpTable = thunkResult.nextTable;
+                    }
+                    else {
+                        offsetValue += ((ULONG_PTR)functionPtr - ((SIZE_T)sectionMapping[counter] + relocationPtr->VirtualAddress + 4));
+                        PRINT("\t\tSetting 0x%p to relative address: 0x%0llX\n", (PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), offsetValue);
+                        memcpy((PVOID)((ULONG_PTR)sectionMapping[counter] + relocationPtr->VirtualAddress), (PVOID)&offsetValue, sizeof(UINT32));
+                    }
                 }
                 else if (relocationPtr->Type == IMAGE_REL_AMD64_REL32_1) {
                     offsetValue = 0;
@@ -440,6 +549,13 @@ extern "C" {
             BeaconVirtualProtect(sectionMapping[counter], sectionPtr->SizeOfRawData, secCharsToProtect(sectionPtr->Characteristics), &oldProtect);
         }
 
+        /* Jump table needs to be exec */
+        if (jumpTable != NULL) {
+            if (!BeaconVirtualProtect(jumpTableInit, jumpTableAlloc, PAGE_EXECUTE_READ, &oldProtect)) {
+                goto Cleanup;
+            }
+        }
+
         TracingBeaconPrintf(CALLBACK_OUTPUT, "Searching for function %s", functionName);
 
         for (counter = 0; counter < coffBase->NumberOfSymbols; counter++) {
@@ -482,6 +598,9 @@ extern "C" {
         if (functionMapping != NULL) {
             BeaconVirtualFree(functionMapping, 0, MEM_RELEASE);
         }
+        if (jumpTable != NULL) {
+            BeaconVirtualFree(jumpTable, 0, MEM_RELEASE);
+        }
         return bResult;
     }
 
@@ -490,15 +609,15 @@ extern "C" {
         datap parser;
         CHAR* functionName = NULL;
 
-        UCHAR* binData = NULL;
-        SIZE_T coffSize = 0;
+        UCHAR* binData   = NULL;
+        SIZE_T coffSize  = 0;
 
-        UCHAR* argData = NULL;
-        SIZE_T argLen = 0;
+        UCHAR* argData   = NULL;
+        SIZE_T argLen    = 0;
 
         BOOL   validCoff = FALSE;
-        BOOL   validPE = FALSE;
-        BOOL   bResult = FALSE;
+        BOOL   validPE   = FALSE;
+        BOOL   bResult   = FALSE;
 
         __stosb((PBYTE)&parser, 0, sizeof(parser));
 

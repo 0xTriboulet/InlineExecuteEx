@@ -11,6 +11,15 @@
 #include "common.h"
 
 extern "C" {
+    typedef struct _THUNK_RESULT {
+        UINT32 rel32;     // value to write into the instruction
+        PVOID  nextTable; // next available spot in jump table
+    } THUNK_RESULT, * PTHUNK_RESULT;
+
+    typedef struct SYMBOL_RESOLUTION {
+        PVOID  functionPtr;
+        BOOL   isImport;
+    } SYMBOL_RESOLUTION, * PSYMBOL_RESOLUTION;
 
     /* Check if symbol is local ( if > 0 symbol is local ) */
     BOOL isCoffSymbolLocallyDefined(PIMAGE_SYMBOL symbol) {
@@ -24,14 +33,15 @@ extern "C" {
     }
 
     /* Resolve the symbol */
-    PVOID resolveCoffSymbol(CHAR* symbolName) {
+    BOOL resolveCoffSymbol(CHAR* symbolName, PSYMBOL_RESOLUTION symbolResolution) {
 
-        RETURN_NULL_ON_NULL(symbolName)
+        RETURN_FALSE_ON_NULL(symbolName)
 
         DFR_LOCAL(MSVCRT, strncmp)
         DFR_LOCAL(MSVCRT, strcmp)
         DFR_LOCAL(MSVCRT, strlen)
         DFR_LOCAL(MSVCRT, memcpy)
+        DFR_LOCAL(MSVCRT, memmove)
         DFR_LOCAL(MSVCRT, strtok)
 
         DFR_LOCAL(KERNEL32, LoadLibraryA)
@@ -42,11 +52,13 @@ extern "C" {
         CHAR*   localLib    = NULL;
         CHAR*   localFunc   = NULL;
 
-        INT     counter = 0;
-
         HMODULE hModule = NULL;
 
-        CHAR  localBuffer[1024];
+        BOOL    bResult = FALSE;
+
+        INT     counter = 0;
+
+        CHAR    localBuffer[1024];
 
         __stosb((PBYTE)&localBuffer, 0, sizeof(localBuffer));
 
@@ -57,6 +69,9 @@ extern "C" {
             || startsWith(symbolName, PREPENDSYMBOL "LoadLibraryA")
             || startsWith(symbolName, PREPENDSYMBOL "GetModuleHandleA")
             || startsWith(symbolName, PREPENDSYMBOL "FreeLibrary")
+            || startsWith(symbolName, PREPENDSYMBOL "memmove")
+            || startsWith(symbolName, PREPENDSYMBOL "memcpy")
+            || startsWith(symbolName, PREPENDSYMBOL "memset")
             || strcmp(symbolName, "__C_specific_handler") == 0
             )
         {
@@ -65,10 +80,13 @@ extern "C" {
                 local = symbolName + strlen(PREPENDSYMBOL);
             }
 
-            UCHAR* p = IF_Get(local);
-            if (p != NULL)
+            functionPtr = IF_Get(local);
+            if (functionPtr != NULL)
             {
-                return p;
+                symbolResolution->functionPtr = functionPtr;
+                symbolResolution->isImport = TRUE;
+                bResult = TRUE;
+                goto Cleanup;
             }
             // fall through if not found
         }
@@ -97,6 +115,9 @@ extern "C" {
                 goto Cleanup;
             }
             PRINT("\t\nFunction address: 0x%p\n", functionPtr);
+            symbolResolution->functionPtr = functionPtr;
+            symbolResolution->isImport = TRUE;
+            bResult = TRUE;
         }
 
         /* Check one more time without the prepended import symbol */
@@ -106,15 +127,21 @@ extern "C" {
             || startsWith(symbolName, "LoadLibraryA")
             || startsWith(symbolName, "GetModuleHandleA")
             || startsWith(symbolName, "FreeLibrary")
+            || startsWith(symbolName, "memmove")
+            || startsWith(symbolName, "memcpy")
+            || startsWith(symbolName, "memset")
             || strcmp(symbolName, "__C_specific_handler") == 0
             )
         {
             const char* local = symbolName;
 
-            UCHAR* p = IF_Get(local);
-            if (p != NULL)
+            functionPtr = IF_Get(local);
+            if (functionPtr != NULL)
             {
-                return p;
+                symbolResolution->functionPtr = functionPtr;
+                symbolResolution->isImport = FALSE;
+                bResult = TRUE;
+                goto Cleanup;
             }
             // fall through if not found
         }
@@ -143,10 +170,15 @@ extern "C" {
                 goto Cleanup;
             }
             PRINT("\t\nFunction address: 0x%p\n", functionPtr);
+
+            symbolResolution->functionPtr = functionPtr;
+            symbolResolution->isImport = FALSE;
+            bResult = TRUE;
+            goto Cleanup;
         }
 
     Cleanup:
-        return functionPtr;
+        return bResult;
     }
 
 }
