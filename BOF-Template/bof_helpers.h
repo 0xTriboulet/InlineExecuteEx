@@ -30,7 +30,7 @@
 
 typedef struct IFEntry {
 	const UCHAR* name;   // points to string literal; no heap copy needed
-	UCHAR* ptr;    // target function pointer
+	UCHAR* ptr;          // target function pointer
 } IFEntry;
 
 IFEntry* g_if = NULL;
@@ -39,7 +39,7 @@ SIZE_T   g_if_cap = 0;
 
 BOOL IF_Init(SIZE_T cap) {
 	if (cap == 0) {
-		cap = 64; // larger than we need, room for growth
+		cap = 128; // larger than we need, room for growth
 	}
 	g_if = (IFEntry*)BeaconVirtualAlloc(NULL, cap * sizeof(IFEntry),
 		MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN,
@@ -101,6 +101,9 @@ BOOL InitInternalFunctionsDynamic(void) {
 
 	DFR_LOCAL(KERNEL32, GetModuleHandleW)
 	DFR_LOCAL(KERNEL32, LoadLibraryW)
+	DFR_LOCAL(MSVCRT, memmove)
+	DFR_LOCAL(MSVCRT, memcpy)
+	DFR_LOCAL(MSVCRT, memset)
 
 	// Data parsing
 	ADD("BeaconDataParse", BeaconDataParse);
@@ -186,6 +189,9 @@ BOOL InitInternalFunctionsDynamic(void) {
 	ADD("LoadLibraryA", LoadLibraryA);
 	ADD("LoadLibraryW", LoadLibraryW);
 	ADD("FreeLibrary", FreeLibrary);
+	ADD("memmove", memmove);
+	ADD("memcpy", memcpy);
+	ADD("memset", memset);
 
 	// Fill SEH helper after all adds
 	{
