@@ -542,9 +542,11 @@ extern "C" {
         }
         if (functionMapping != NULL) {
             BeaconVirtualFree(functionMapping, 0, MEM_RELEASE);
+            functionMapping = NULL;
         }
         if (jumpTable != NULL) {
             BeaconVirtualFree((PVOID)g_JumpTableStartPointer, 0, MEM_RELEASE);
+            g_JumpTableStartPointer = 0;
         }
         return bResult;
     }
