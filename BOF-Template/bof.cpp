@@ -489,10 +489,8 @@ extern "C" {
         }
 
         /* Set section permissions */
-        for (counter = 0; counter < coffBase->NumberOfSections; counter++) {
-            sectionPtr = firstSection + counter;
-            /* Use the characteristics to determine the correct permissions */
-            BeaconVirtualProtect(sectionMapping[counter], sectionPtr->SizeOfRawData, secCharsToProtect(sectionPtr->Characteristics), &oldProtect);
+        if (!SetSectionPermissions(sectionMapping, firstSection, coffBase->NumberOfSections)) {
+            goto Cleanup;
         }
 
         /* Jump table needs to be exec */
@@ -533,7 +531,7 @@ extern "C" {
     Cleanup:
         if (sectionMapping != NULL) {
             for (counter = 0; counter < coffBase->NumberOfSections; counter++) {
-                if (sectionMapping[counter]) {
+                if (sectionMapping[counter] != NULL) {
                     BeaconVirtualFree(sectionMapping[counter], 0, MEM_RELEASE);
                 }
             }
