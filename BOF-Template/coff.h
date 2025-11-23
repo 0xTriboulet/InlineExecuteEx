@@ -25,8 +25,13 @@ extern "C" {
     UCHAR  jmpStub[] = {                                            // jump stub used in jump table
         0x48, 0xB8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // mov rax, <ADDR>
         0xFF, 0xE0,                                                 // jmp rax
-        0x00, 0x00, 0x00, 0x00
+        0x00, 0x00, 0x00, 0x00                                      // padding for 16-byte alignment
     };
+
+#define JUMP_TABLE_ENTRY_SIZE sizeof(jmpStub)
+#define JUMP_TABLE_SIZE       0x1000 * JUMP_TABLE_ENTRY_SIZE // we can have 4096 entries in our table (this is arbitrary)
+
+ULONG_PTR g_JumpTableStartPointer = NULL;
 
     /* Add an entry to the jump table */
     BOOL addJumpThunk(
@@ -46,36 +51,39 @@ extern "C" {
         RETURN_FALSE_ON_ZERO(ripInstrAddr);
         RETURN_FALSE_ON_NULL(thunkResult);
 
+        /* If we don't have the start of the jump table, bail */
+        RETURN_FALSE_ON_ZERO(g_JumpTableStartPointer);
+
         DFR_LOCAL(MSVCRT, memcpy)
 
         PVOID fPtr = functionPtr;
 
-        //
-        // 1. Copy the stub into the jump table
-        //
+        /* Calculate the end of the jump table */
+        ULONG_PTR jumpTableEnd = g_JumpTableStartPointer + JUMP_TABLE_SIZE - JUMP_TABLE_ENTRY_SIZE;
+
+        /* Bounds check the jump table */
+        if ((ULONG_PTR)jumpTable >= jumpTableEnd) {
+            return FALSE;
+        }
+
+        /* 1. Copy the stub into the jump table */
         memcpy(jumpTable, jmpRaxStub, jmpRaxStubLen);
 
-        //
-        // 2. Patch the real function address into the thunk
-        //
+        /* 2. Patch the real function address into the thunk */
         memcpy(jumpTable + jmpRaxIdx, &fPtr, sizeof(PVOID));
 
-        //
-        // 3. Compute disp32 for: jmp rel32 / call rel32
-        //
-        //    disp32 = (thunk_address) - (rip_of_next_instruction)
-        //
+        /* 3. Compute disp32 for: jmp rel32 / call rel32
+        *     disp32 = (thunk_address) - (rip_of_next_instruction) */
         ULONG_PTR ripNext = ripInstrAddr + 4;  // instruction length = 4 for REL32 reloc
         ULONG_PTR thunkAddr = (ULONG_PTR)jumpTable;
 
         INT64 delta = (INT64)thunkAddr - (INT64)ripNext;
 
+        /* Remember to kick back the delta to the caller function */
         thunkResult->rel32 = (UINT32)delta;
 
-        //
-        // 4. Advance jump table pointer for next thunk
-        //
-        thunkResult->nextTable = (PVOID)((ULONG_PTR)jumpTable + jmpRaxStubLen * 2);
+        /* 4. Advance jump table pointer for next thunk */
+        thunkResult->nextTable = (PVOID)((ULONG_PTR)jumpTable + jmpRaxStubLen);
 
         return TRUE;
     }
@@ -95,6 +103,7 @@ extern "C" {
     BOOL resolveCoffSymbol(CHAR* symbolName, PSYMBOL_RESOLUTION symbolResolution) {
 
         RETURN_FALSE_ON_NULL(symbolName)
+        RETURN_FALSE_ON_NULL(symbolResolution)
 
         DFR_LOCAL(MSVCRT, strncmp)
         DFR_LOCAL(MSVCRT, strcmp)

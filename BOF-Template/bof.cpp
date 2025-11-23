@@ -24,6 +24,9 @@ extern "C" {
 
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
+
+        RETURN_FALSE_ON_NULL(coffData);
+
         PIMAGE_FILE_HEADER coffBase = NULL;
 
         /* Cast the header */
@@ -105,7 +108,7 @@ extern "C" {
         SIZE_T                relocationCount      = 0;
         SIZE_T                relocationIterCount  = 0;
         SIZE_T                functionMappingCount = 0;
-        SIZE_T                jumpTableAlloc       = 0x1000 * sizeof(jmpStub);
+        SIZE_T                jumpTableAlloc       = JUMP_TABLE_SIZE;
 
         INT64                 offsetValue          = 0;
 
@@ -114,7 +117,6 @@ extern "C" {
         VOID** sectionMapping  = NULL;
         VOID** functionMapping = NULL;
         VOID*  jumpTable       = NULL;
-        VOID*  jumpTableInit   = NULL;
 
         BOOL   bResult         = FALSE;
 
@@ -126,8 +128,8 @@ extern "C" {
         THUNK_RESULT thunkResult;
 
         __stosb((PBYTE)&thunkResult, 0, sizeof(thunkResult));
-        __stosb((PBYTE)&symbolResolution, 0, sizeof(symbolResolution));
         __stosb((PBYTE)shortNameBuffer, 0, sizeof(shortNameBuffer));
+        __stosb((PBYTE)&symbolResolution, 0, sizeof(symbolResolution));
         __stosb((PBYTE)functionNameBuffer, 0, sizeof(functionNameBuffer));
         __stosb((PBYTE)specificHandlerBuffer, 0, sizeof(specificHandlerBuffer));
 
@@ -136,7 +138,7 @@ extern "C" {
         void(__cdecl * go) (CHAR * arg, INT argSize);
 
         if (!g_if && !InitInternalFunctionsDynamic()) {
-            BeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
+            TracingBeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
             goto Cleanup;
         }
 
@@ -167,8 +169,8 @@ extern "C" {
             goto Cleanup;
         }
 
-        /* Store the original address */
-        jumpTableInit = jumpTable;
+        /* Save the jump table start pointer, we need this to bounds check and free */
+        g_JumpTableStartPointer = (ULONG_PTR)jumpTable;
 
         /* Print debug information */
         PRINT("Machine               : 0x%X\n", coffBase->Machine);
@@ -484,7 +486,6 @@ extern "C" {
                 }
 #endif // 32-bit end
             }
-
         }
 
         /* Set section permissions */
@@ -496,7 +497,7 @@ extern "C" {
 
         /* Jump table needs to be exec */
         if (jumpTable != NULL) {
-            if (!BeaconVirtualProtect(jumpTableInit, jumpTableAlloc, PAGE_EXECUTE_READ, &oldProtect)) {
+            if (!BeaconVirtualProtect((PVOID)g_JumpTableStartPointer, jumpTableAlloc, PAGE_EXECUTE_READ, &oldProtect)) {
                 goto Cleanup;
             }
         }
@@ -526,7 +527,6 @@ extern "C" {
                 bResult = TRUE;
 
                 goto Cleanup;
-
             }
         }
 
@@ -542,9 +542,11 @@ extern "C" {
         }
         if (functionMapping != NULL) {
             BeaconVirtualFree(functionMapping, 0, MEM_RELEASE);
+            functionMapping = NULL;
         }
         if (jumpTable != NULL) {
-            BeaconVirtualFree(jumpTable, 0, MEM_RELEASE);
+            BeaconVirtualFree((PVOID)g_JumpTableStartPointer, 0, MEM_RELEASE);
+            g_JumpTableStartPointer = 0;
         }
         return bResult;
     }
@@ -587,18 +589,18 @@ extern "C" {
             /* If it's a COFF and we successfully ran it */
             bResult = TRUE;
         }
-        else if (validCoff == TRUE) {
+        else if (validPE == TRUE) {
             /* If it's a PE and we successfully ran it */
-            bResult = TRUE;
-        }
-        else {
-            /* Loading or running failed somehow */
-            BeaconPrintf(CALLBACK_ERROR, "Failed!");
+            bResult = FALSE; // Not currently supported
         }
 
         /* Everything worked! */
         if (bResult == TRUE) {
             BeaconPrintf(CALLBACK_OUTPUT, "[+] Success!");
+        }
+        else {
+            /* Loading or running failed somehow */
+            BeaconPrintf(CALLBACK_ERROR, "Failed!");
         }
 
     Cleanup:
