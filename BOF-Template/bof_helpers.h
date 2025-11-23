@@ -37,9 +37,11 @@ IFEntry* g_if = NULL;
 SIZE_T   g_if_count = 0;
 SIZE_T   g_if_cap = 0;
 
+#define INTERNAL_FUNCTION_CAPACITY 128
+
 BOOL IF_Init(SIZE_T cap) {
 	if (cap == 0) {
-		cap = 128; // larger than we need, room for growth
+		cap = INTERNAL_FUNCTION_CAPACITY; // larger than we need, room for growth
 	}
 	g_if = (IFEntry*)BeaconVirtualAlloc(NULL, cap * sizeof(IFEntry),
 		MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN,
@@ -95,7 +97,7 @@ BOOL IF_Set(const char* name, void* ptr) {
 #define ADD(name, fn)  do { if (!IF_Add(name, (void*)(fn))) return FALSE; } while(0)
 
 BOOL InitInternalFunctionsDynamic(void) {
-	if (!IF_Init(64)) {
+	if (!IF_Init(INTERNAL_FUNCTION_CAPACITY)) {
 		return FALSE;
 	}
 

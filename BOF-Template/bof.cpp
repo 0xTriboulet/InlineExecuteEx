@@ -24,6 +24,9 @@ extern "C" {
 
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
+
+        RETURN_FALSE_ON_NULL(coffData);
+
         PIMAGE_FILE_HEADER coffBase = NULL;
 
         /* Cast the header */
@@ -105,7 +108,7 @@ extern "C" {
         SIZE_T                relocationCount      = 0;
         SIZE_T                relocationIterCount  = 0;
         SIZE_T                functionMappingCount = 0;
-        SIZE_T                jumpTableAlloc       = 0x1000 * sizeof(jmpStub);
+        SIZE_T                jumpTableAlloc       = JUMP_TABLE_SIZE;
 
         INT64                 offsetValue          = 0;
 
@@ -165,6 +168,11 @@ extern "C" {
         jumpTable = BeaconVirtualAlloc(NULL, jumpTableAlloc, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
         if (jumpTable == NULL) {
             goto Cleanup;
+        }
+
+        /* Save the jump table start pointer, we need this to bounds check */
+        if (g_JumpTableStartPointer == 0) {
+            g_JumpTableStartPointer = (ULONG_PTR)jumpTable;
         }
 
         /* Store the original address */
