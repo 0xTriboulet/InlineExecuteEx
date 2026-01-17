@@ -258,6 +258,7 @@
     <ClInclude Include="base\mock.h" />
     <ClInclude Include="beacon.h" />
     <ClInclude Include="beacon_gate.h" />
+    <ClInclude Include="bofpe.h" />
     <ClInclude Include="bof_helpers.h" />
     <ClInclude Include="coff.h" />
     <ClInclude Include="common.h" />
