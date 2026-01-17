@@ -96,13 +96,20 @@ BOOL IF_Set(const char* name, void* ptr) {
 
 #define ADD(name, fn)  do { if (!IF_Add(name, (void*)(fn))) return FALSE; } while(0)
 
+/* Used to shim functions that shouldn't be called. Kill everything. */
+VOID TerminateProcessWrapper(){
+	DFR_LOCAL(KERNEL32, GetCurrentProcess)
+	DFR_LOCAL(KERNEL32, TerminateProcess)
+	TerminateProcess(GetCurrentProcess, 0);
+}
+
 BOOL InitInternalFunctionsDynamic(void) {
 	if (!IF_Init(INTERNAL_FUNCTION_CAPACITY)) {
 		return FALSE;
 	}
-
 	DFR_LOCAL(KERNEL32, GetModuleHandleW)
 	DFR_LOCAL(KERNEL32, LoadLibraryW)
+
 	DFR_LOCAL(MSVCRT, memmove)
 	DFR_LOCAL(MSVCRT, memcpy)
 	DFR_LOCAL(MSVCRT, memset)
@@ -194,6 +201,9 @@ BOOL InitInternalFunctionsDynamic(void) {
 	ADD("memmove", memmove);
 	ADD("memcpy", memcpy);
 	ADD("memset", memset);
+
+	// BeaconInvokeStandalone Should never be invoked directly from a live Beacon
+	ADD("BeaconInvokeStandalone", TerminateProcessWrapper);
 
 	// Fill SEH helper after all adds
 	{

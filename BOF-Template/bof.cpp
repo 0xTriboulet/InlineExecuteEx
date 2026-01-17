@@ -9,6 +9,7 @@
  *      is linked against the the debug build.
  */
 #ifdef _DEBUG
+#pragma comment(lib, "ntdll")
 #undef DECLSPEC_IMPORT
 #define DECLSPEC_IMPORT
 #include "base\mock.h"
@@ -21,6 +22,7 @@ extern "C" {
 
 #include "common.h"
 #include "coff.h"
+#include "bofpe.h"
 
     /* Check if the MACHINE_CODE in the COFF Header matches the expected value */
     BOOL isValidCoff(UCHAR* coffData) {
@@ -71,13 +73,111 @@ extern "C" {
         return bResult;
     }
 
-    /* Run the COFF. Returns TRUE on success, and FALSE on failure. */
-    BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T coffSize, UCHAR* argData, SIZE_T argLen) {
+    /* Run a BOF-PE. Returns TRUE on success. */
+    BOOL runPE(CHAR* functionName, UCHAR* peData, SIZE_T peSize, UCHAR* argData, SIZE_T argLen) {
+
+        DFR_LOCAL(MSVCRT, memcpy)
+        DFR_LOCAL(MSVCRT, memset)
+
+        PIMAGE_DOS_HEADER dosHeader          = NULL;
+        PIMAGE_NT_HEADERS ntHeaders          = NULL;
+        PIMAGE_SECTION_HEADER section        = NULL;
+        SIZE_T sectionSize                   = 0;
+        PVOID preferredBase                  = NULL;
+        PVOID mappedBase                     = NULL;
+        SIZE_T imageSize                     = 0;
+        SIZE_T headerSize                    = 0;
+        WORD sectionCount                    = 0;
+        WORD i                               = 0;
+        BOOL bResult                         = FALSE;
+        ULONGLONG delta                      = 0;
+        VOID(__cdecl* entry)(CHAR*, INT)     = NULL;
+
+        RETURN_FALSE_ON_NULL(functionName);
+        RETURN_FALSE_ON_NULL(peData);
+        RETURN_FALSE_ON_ZERO(peSize);
+
+        if (!g_if && !InitInternalFunctionsDynamic()) {
+            TracingBeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
+            goto Cleanup;
+        }
+
+        dosHeader = (PIMAGE_DOS_HEADER)peData;
+        ntHeaders = (PIMAGE_NT_HEADERS)(peData + dosHeader->e_lfanew);
+
+        preferredBase = (PVOID)(ULONG_PTR)ntHeaders->OptionalHeader.ImageBase;
+        imageSize = ntHeaders->OptionalHeader.SizeOfImage;
+        headerSize = ntHeaders->OptionalHeader.SizeOfHeaders;
+        sectionCount = ntHeaders->FileHeader.NumberOfSections;
+        section = IMAGE_FIRST_SECTION(ntHeaders);
+
+        /* try the preferred base, otherwise just alloc anywhere */
+        mappedBase = BeaconVirtualAlloc(preferredBase, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (mappedBase == NULL) {
+            mappedBase = BeaconVirtualAlloc(NULL, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (mappedBase == NULL) {
+                BeaconPrintf(CALLBACK_ERROR, "PE allocation failed");
+                goto Cleanup;
+            }
+        }
+
+        memset(mappedBase, 0, imageSize);
+        memcpy(mappedBase, peData, headerSize);
+
+        for (i = 0; i < sectionCount; i++) {
+
+            sectionSize = section[i].SizeOfRawData;
+            if (sectionSize == 0) {
+                continue;
+            }
+
+            if (section[i].PointerToRawData != 0) {
+                memcpy((PBYTE)mappedBase + section[i].VirtualAddress,
+                    peData + section[i].PointerToRawData,
+                    sectionSize);
+            }
+        }
+
+        delta = (ULONGLONG)((ULONG_PTR)mappedBase - (ULONG_PTR)preferredBase);
+        if (!processPeRelocations((UCHAR*)mappedBase, ntHeaders, delta)) {
+            goto Cleanup;
+        }
+
+        if (!processPeImports((UCHAR*)mappedBase, ntHeaders)) {
+            goto Cleanup;
+        }
+
+        if (!protectPeSections((UCHAR*)mappedBase, ntHeaders)) {
+            goto Cleanup;
+        }
+
+        addExceptionSupport((UCHAR*)mappedBase, ntHeaders);
+
+        processPeTls((UCHAR*)mappedBase, ntHeaders);
+
+        entry = (VOID(__cdecl*)(CHAR*, INT))resolvePeExport((UCHAR*)mappedBase, ntHeaders, functionName);
+        if (entry == NULL) {
+            BeaconPrintf(CALLBACK_ERROR, "Export %s not found", functionName);
+            goto Cleanup;
+        }
+
+        entry((CHAR*)argData, (INT)argLen);
+        bResult = TRUE;
+
+    Cleanup:
+        if (mappedBase != NULL) {
+            BeaconVirtualFree(mappedBase, 0, MEM_RELEASE);
+        }
+        return bResult;
+    }
+
+     /* Run the COFF. Returns TRUE on success, and FALSE on failure. */
+     BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T binSize, UCHAR* argData, SIZE_T argLen) {
 
         /* Input validation */
         RETURN_FALSE_ON_NULL(functionName);
         RETURN_FALSE_ON_NULL(coffData);
-        RETURN_FALSE_ON_ZERO(coffSize);
+        RETURN_FALSE_ON_ZERO(binSize);
 
         DFR_LOCAL(KERNEL32, GetModuleHandleW)
         DFR_LOCAL(KERNEL32, GetProcAddress)
@@ -111,6 +211,8 @@ extern "C" {
         SIZE_T                jumpTableAlloc       = JUMP_TABLE_SIZE;
 
         INT64                 offsetValue          = 0;
+        UINT64                addend               = 0;
+        UINT64                target               = 0;
 
         CHAR* symbolName       = NULL;
 
@@ -213,8 +315,9 @@ extern "C" {
 
             /* Make an allocation for every section */
             sectionMapping[counter] = BeaconVirtualAlloc(NULL, allocSize, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
-            if (sectionMapping[counter] == NULL) {
+            if (sectionMapping[counter] == NULL && allocSize > 0) {
                 PRINT("Failed to allocate memory\n");
+                goto Cleanup;
             }
 
             PRINT("Allocated section %d at %p\n", counter, sectionMapping[counter]);
@@ -232,7 +335,7 @@ extern "C" {
 
         /* Actually allocate enough for worst case every relocation */
         functionMapping = (VOID**)BeaconVirtualAlloc(NULL, relocationCount * 8, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_READWRITE);
-        if (functionMapping == NULL) {
+        if (functionMapping == NULL && relocationCount > 0) {
             PRINT("Failed to allocation functionMapping");
             goto Cleanup;
         }
@@ -320,7 +423,7 @@ extern "C" {
                     PRINT("\n\nRelocation %llu in section index %llu references undefined symbol %s\n", relocationCount, counter, symbolName);
                     goto Cleanup; // Bail so we don't crash
                 }
-#ifdef _M_X64   /* Yanked the relocations straight from CoffLoader */
+#ifdef _M_X64   /* Yanked the relocations straight from CoffLoader + https://github.com/The-Z-Labs/bof-launcher*/
 
                 /* Type == 1 relocation is the 64-bit VA of the relocation target */
                 if (relocationPtr->Type == IMAGE_REL_AMD64_ADDR64) {
@@ -492,7 +595,7 @@ extern "C" {
         for (counter = 0; counter < coffBase->NumberOfSections; counter++) {
             sectionPtr = firstSection + counter;
             /* Use the characteristics to determine the correct permissions */
-            BeaconVirtualProtect(sectionMapping[counter], sectionPtr->SizeOfRawData, secCharsToProtect(sectionPtr->Characteristics), &oldProtect);
+            BeaconVirtualProtect(sectionMapping[counter], max(sectionPtr->SizeOfRawData, sectionPtr->Misc.VirtualSize), secCharsToProtect(sectionPtr->Characteristics), &oldProtect);
         }
 
         /* Jump table needs to be exec */
@@ -557,7 +660,7 @@ extern "C" {
         CHAR* functionName = NULL;
 
         UCHAR* binData   = NULL;
-        SIZE_T coffSize  = 0;
+        SIZE_T binSize  = 0;
 
         UCHAR* argData   = NULL;
         SIZE_T argLen    = 0;
@@ -569,11 +672,11 @@ extern "C" {
         __stosb((PBYTE)&parser, 0, sizeof(parser));
 
         BeaconDataParse(&parser, args, len);
-        binData = (UCHAR*)BeaconDataExtract(&parser, (int*)&coffSize);
+        binData = (UCHAR*)BeaconDataExtract(&parser, (int*)&binSize);
         functionName = BeaconDataExtract(&parser, NULL);
         argData = (UCHAR*)BeaconDataExtract(&parser, (int*)&argLen);
 
-        TracingBeaconPrintf(CALLBACK_OUTPUT, "Received function name: %s\nBOF size: %llu", functionName, coffSize);
+        TracingBeaconPrintf(CALLBACK_OUTPUT, "Received function name: %s\nBinary size: %llu", functionName, binSize);
 
         /* Check if the input binary is something this BOF can run */
         validCoff = isValidCoff(binData);
@@ -585,27 +688,28 @@ extern "C" {
             goto Cleanup;
         }
 
-        if (validCoff == TRUE && runCoff(functionName, binData, coffSize, argData, argLen)) {
+        if (validCoff == TRUE && runCoff(functionName, binData, binSize, argData, argLen)) {
             /* If it's a COFF and we successfully ran it */
             bResult = TRUE;
         }
-        else if (validPE == TRUE) {
-            /* If it's a PE and we successfully ran it */
-            bResult = FALSE; // Not currently supported
-        }
+        else if (validPE == TRUE && runPE(functionName, binData, binSize, argData, argLen)) {
+            /* If it's a BOF-PE and we successfully ran it */
+            bResult = TRUE;
+         }
 
-        /* Everything worked! */
-        if (bResult == TRUE) {
-            BeaconPrintf(CALLBACK_OUTPUT, "[+] Success!");
-        }
-        else {
-            /* Loading or running failed somehow */
-            BeaconPrintf(CALLBACK_ERROR, "Failed!");
-        }
+         /* Everything worked! */
+         if (bResult == TRUE) {
+             BeaconPrintf(CALLBACK_OUTPUT, "[+] Success!");
+         }
+         else {
+             /* Loading or running failed somehow */
+             BeaconPrintf(CALLBACK_ERROR, "Failed!");
+         }
 
     Cleanup:
         if (g_if != NULL) {
             BeaconVirtualFree(g_if, 0, MEM_RELEASE);
+            g_if = NULL;
         }
         return;
     }
