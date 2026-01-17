@@ -36,6 +36,53 @@ Usage: inline-execute-ex 'bof.o' 'go' 'hello world!'
 
 ![alt text](image.png)
 
+## Access BOF API from PIC
+[Crystal Palace](https://tradecraftgarden.org/crystalpalace.html) and other PIC development templates/frameworks have made it possible to more easily develop position-independent code. Unfortunately, using PIC as a postex tradecraft format comes with the headache of trying to send output to your Beacon console. 
+
+`InlineExecuteEx` offers a custom entry point convention that passes in BOF APIs to PIC via a crude vtable. To access this functionality, pass in `"pic"` as the entry point from your `.cna` or from the Beacon console.
+
+All of this goes to say, you can write something like this
+
+```c
+#include <windows.h>
+
+// These definitions are available in `api_table.h`
+#define API_TABLE_VERSION 0x1
+
+typedef struct API_TABLE {
+    DWORD version; // You can use this to protect yourself from crashes if I ever change this definition (ie `if (version > 0x1) return;`)
+ ...snip...
+    PVOID toWideChar;
+} API_TABLE, *PAPI_TABLE;
+
+#define CALLBACK_OUTPUT      0x0
+
+// You'll need to manually define the things you want, maybe at some point I'll provide standard ones in `api_table.h`
+typedef void (*BeaconPrintf_t)(int type, char* fmt, ...);
+typedef void (*memcpy_t)(void* dest, const void* src, size_t count);
+typedef void (*memset_t)(void* dest, int value, size_t count);
+
+void __cdecl go (CHAR * arg, INT argSize, PAPI_TABLE apiTable) {
+    char buffer[256];
+	// Cast the pointer to a function and call it
+    ((memset_t)(apiTable->memset))(buffer, 0, sizeof(buffer));
+    ((memcpy_t)(apiTable->memcpy))(buffer, arg, argSize);
+    ((BeaconPrintf_t)(apiTable->BeaconPrintf))(CALLBACK_OUTPUT, buffer);
+}
+```
+
+Once you've compiled the code above, you can extract the `.text` section via whatever mechanism happens to be your favorite. And you'll then be able to execute it from the Beacon console like this.
+
+```sh
+[01/17 11:43:04] beacon> inline-execute-ex "C:\Users\0xtriboulet\<snip>\pic.x64.o" pic test
+[01/17 11:43:05] [+] host called home, sent: 34943 bytes
+[01/17 11:43:05] [+] received output:
+test # <--- We printed the argument to the Beacon console from PIC!
+[01/17 11:43:05] [+] received output:
+[+] Success!
+```
+
+
 ## Drop-In Replacement for `beacon_inline_execute`
 Conventional `.cna` scripts register an alias that calls `beacon_inline_execute` to task Beacon to run a BOF. If you want to use `InlineExecuteEx` instead of the default BOF loader for a capability, you can move the `inline-execute-ex.cna` script, the `Release` directory, and the `x64` directory to the same directory as your BOF's `.cna` script.
 

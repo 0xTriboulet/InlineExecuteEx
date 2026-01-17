@@ -1,5 +1,9 @@
 #pragma once
 #include <Windows.h>
+#include <intrin.h>
+
+#include "api_table.h"
+
 #define RETURN_FALSE_ON_NULL(x) if ( (x) == NULL ) { return FALSE; }
 #define RETURN_NULL_ON_NULL(x)  if ( (x) == NULL ) { return NULL; }
 #define RETURN_FALSE_ON_ZERO(x) if ( (x) == 0 ) { return FALSE; }
@@ -96,13 +100,12 @@ BOOL IF_Set(const char* name, void* ptr) {
 
 #define ADD(name, fn)  do { if (!IF_Add(name, (void*)(fn))) return FALSE; } while(0)
 
-/* Used to shim functions that shouldn't be called. Kill everything. */
-VOID TerminateProcessWrapper(){
-	DFR_LOCAL(KERNEL32, GetCurrentProcess)
-	DFR_LOCAL(KERNEL32, TerminateProcess)
-	TerminateProcess(GetCurrentProcess, 0);
+/* Used to shim functions that shouldn't be called. */
+DWORD BeaconInvokeStandaloneWrapper(){
+	return 0;
 }
 
+/* Initialize BOF functions. FYI, you can hook BOF API from here */
 BOOL InitInternalFunctionsDynamic(void) {
 	if (!IF_Init(INTERNAL_FUNCTION_CAPACITY)) {
 		return FALSE;
@@ -203,7 +206,7 @@ BOOL InitInternalFunctionsDynamic(void) {
 	ADD("memset", memset);
 
 	// BeaconInvokeStandalone Should never be invoked directly from a live Beacon
-	ADD("BeaconInvokeStandalone", TerminateProcessWrapper);
+	ADD("BeaconInvokeStandalone", BeaconInvokeStandaloneWrapper);
 
 	// Fill SEH helper after all adds
 	{
@@ -227,6 +230,155 @@ BOOL InitInternalFunctionsDynamic(void) {
 }
 #undef ADD
 
+#define CHECK_API_FIELD(x) do { if ((x) == NULL) { return FALSE; } } while (0)
+
+BOOL BuildApiTable(PAPI_TABLE apiTable) {
+
+    RETURN_FALSE_ON_NULL(apiTable);
+	
+	DFR_LOCAL(MSVCRT, memmove)
+	DFR_LOCAL(MSVCRT, memcpy)
+	DFR_LOCAL(MSVCRT, memset)
+
+	DFR_LOCAL(KERNEL32, GetModuleHandleW)
+	DFR_LOCAL(KERNEL32, LoadLibraryW)
+
+    __stosb((PBYTE) apiTable, 0, sizeof(API_TABLE));
+
+    apiTable->version                        = API_TABLE_VERSION;
+    apiTable->BeaconAddValue                 = (PVOID)BeaconAddValue;
+    apiTable->BeaconCleanupProcess           = (PVOID)BeaconCleanupProcess;
+    apiTable->BeaconCloseHandle              = (PVOID)BeaconCloseHandle;
+    apiTable->BeaconDataExtract              = (PVOID)BeaconDataExtract;
+    apiTable->BeaconDataLength               = (PVOID)BeaconDataLength;
+    apiTable->BeaconDataParse                = (PVOID)BeaconDataParse;
+    apiTable->BeaconDataPtr                  = (PVOID)BeaconDataPtr;
+    apiTable->BeaconDataShort                = (PVOID)BeaconDataShort;
+    apiTable->BeaconDataStoreGetItem         = (PVOID)BeaconDataStoreGetItem;
+    apiTable->BeaconDataStoreMaxEntries      = (PVOID)BeaconDataStoreMaxEntries;
+    apiTable->BeaconDataStoreProtectItem     = (PVOID)BeaconDataStoreProtectItem;
+    apiTable->BeaconDataStoreUnprotectItem   = (PVOID)BeaconDataStoreUnprotectItem;
+    apiTable->BeaconDisableBeaconGate        = (PVOID)BeaconDisableBeaconGate;
+    apiTable->BeaconDisableBeaconGateMasking = (PVOID)BeaconDisableBeaconGateMasking;
+    apiTable->BeaconDuplicateHandle          = (PVOID)BeaconDuplicateHandle;
+    apiTable->BeaconEnableBeaconGate         = (PVOID)BeaconEnableBeaconGate;
+    apiTable->BeaconEnableBeaconGateMasking  = (PVOID)BeaconEnableBeaconGateMasking;
+    apiTable->BeaconFormatAlloc              = (PVOID)BeaconFormatAlloc;
+    apiTable->BeaconFormatAppend             = (PVOID)BeaconFormatAppend;
+    apiTable->BeaconFormatFree               = (PVOID)BeaconFormatFree;
+    apiTable->BeaconFormatInt                = (PVOID)BeaconFormatInt;
+    apiTable->BeaconFormatPrintf             = (PVOID)BeaconFormatPrintf;
+    apiTable->BeaconFormatReset              = (PVOID)BeaconFormatReset;
+    apiTable->BeaconFormatToString           = (PVOID)BeaconFormatToString;
+    apiTable->BeaconGetCustomUserData        = (PVOID)BeaconGetCustomUserData;
+    apiTable->BeaconGetSpawnTo               = (PVOID)BeaconGetSpawnTo;
+    apiTable->BeaconGetSyscallInformation    = (PVOID)BeaconGetSyscallInformation;
+    apiTable->BeaconGetThreadContext         = (PVOID)BeaconGetThreadContext;
+    apiTable->BeaconGetValue                 = (PVOID)BeaconGetValue;
+    apiTable->BeaconInjectProcess            = (PVOID)BeaconInjectProcess;
+    apiTable->BeaconInjectTemporaryProcess   = (PVOID)BeaconInjectTemporaryProcess;
+    apiTable->BeaconInformation              = (PVOID)BeaconInformation;
+    apiTable->BeaconInvokeStandalone         = (PVOID)BeaconInvokeStandaloneWrapper;
+    apiTable->BeaconIsAdmin                  = (PVOID)BeaconIsAdmin;
+    apiTable->BeaconOpenProcess              = (PVOID)BeaconOpenProcess;
+    apiTable->BeaconOpenThread               = (PVOID)BeaconOpenThread;
+    apiTable->BeaconOutput                   = (PVOID)BeaconOutput;
+    apiTable->BeaconPrintf                   = (PVOID)BeaconPrintf;
+    apiTable->BeaconReadProcessMemory        = (PVOID)BeaconReadProcessMemory;
+    apiTable->BeaconRemoveValue              = (PVOID)BeaconRemoveValue;
+    apiTable->BeaconRevertToken              = (PVOID)BeaconRevertToken;
+    apiTable->BeaconResumeThread             = (PVOID)BeaconResumeThread;
+    apiTable->BeaconSetThreadContext         = (PVOID)BeaconSetThreadContext;
+    apiTable->BeaconSpawnTemporaryProcess    = (PVOID)BeaconSpawnTemporaryProcess;
+    apiTable->BeaconUnmapViewOfFile          = (PVOID)BeaconUnmapViewOfFile;
+    apiTable->BeaconUseToken                 = (PVOID)BeaconUseToken;
+    apiTable->BeaconVirtualAlloc             = (PVOID)BeaconVirtualAlloc;
+    apiTable->BeaconVirtualAllocEx           = (PVOID)BeaconVirtualAllocEx;
+    apiTable->BeaconVirtualFree              = (PVOID)BeaconVirtualFree;
+    apiTable->BeaconVirtualProtect           = (PVOID)BeaconVirtualProtect;
+    apiTable->BeaconVirtualProtectEx         = (PVOID)BeaconVirtualProtectEx;
+    apiTable->BeaconVirtualQuery             = (PVOID)BeaconVirtualQuery;
+    apiTable->BeaconWriteProcessMemory       = (PVOID)BeaconWriteProcessMemory;
+    apiTable->FreeLibrary                    = (PVOID)FreeLibrary;
+    apiTable->GetModuleHandleA               = (PVOID)GetModuleHandleA;
+    apiTable->GetModuleHandleW               = (PVOID)GetModuleHandleW;
+    apiTable->GetProcAddress                 = (PVOID)GetProcAddress;
+    apiTable->LoadLibraryA                   = (PVOID)LoadLibraryA;
+    apiTable->LoadLibraryW                   = (PVOID)LoadLibraryW;
+    apiTable->memmove                        = (PVOID)memmove;
+    apiTable->memcpy                         = (PVOID)memcpy;
+    apiTable->memset                         = (PVOID)memset;
+    apiTable->toWideChar                     = (PVOID)toWideChar;
+
+    CHECK_API_FIELD(apiTable->version);
+    CHECK_API_FIELD(apiTable->BeaconAddValue);
+    CHECK_API_FIELD(apiTable->BeaconCleanupProcess);
+    CHECK_API_FIELD(apiTable->BeaconCloseHandle);
+    CHECK_API_FIELD(apiTable->BeaconDataExtract);
+    CHECK_API_FIELD(apiTable->BeaconDataLength);
+    CHECK_API_FIELD(apiTable->BeaconDataParse);
+    CHECK_API_FIELD(apiTable->BeaconDataPtr);
+    CHECK_API_FIELD(apiTable->BeaconDataShort);
+    CHECK_API_FIELD(apiTable->BeaconDataStoreGetItem);
+    CHECK_API_FIELD(apiTable->BeaconDataStoreMaxEntries);
+    CHECK_API_FIELD(apiTable->BeaconDataStoreProtectItem);
+    CHECK_API_FIELD(apiTable->BeaconDataStoreUnprotectItem);
+    CHECK_API_FIELD(apiTable->BeaconDisableBeaconGate);
+    CHECK_API_FIELD(apiTable->BeaconDisableBeaconGateMasking);
+    CHECK_API_FIELD(apiTable->BeaconDuplicateHandle);
+    CHECK_API_FIELD(apiTable->BeaconEnableBeaconGate);
+    CHECK_API_FIELD(apiTable->BeaconEnableBeaconGateMasking);
+    CHECK_API_FIELD(apiTable->BeaconFormatAlloc);
+    CHECK_API_FIELD(apiTable->BeaconFormatAppend);
+    CHECK_API_FIELD(apiTable->BeaconFormatFree);
+    CHECK_API_FIELD(apiTable->BeaconFormatInt);
+    CHECK_API_FIELD(apiTable->BeaconFormatPrintf);
+    CHECK_API_FIELD(apiTable->BeaconFormatReset);
+    CHECK_API_FIELD(apiTable->BeaconFormatToString);
+    CHECK_API_FIELD(apiTable->BeaconGetCustomUserData);
+    CHECK_API_FIELD(apiTable->BeaconGetSpawnTo);
+    CHECK_API_FIELD(apiTable->BeaconGetSyscallInformation);
+    CHECK_API_FIELD(apiTable->BeaconGetThreadContext);
+    CHECK_API_FIELD(apiTable->BeaconGetValue);
+    CHECK_API_FIELD(apiTable->BeaconInjectProcess);
+    CHECK_API_FIELD(apiTable->BeaconInjectTemporaryProcess);
+    CHECK_API_FIELD(apiTable->BeaconInformation);
+    CHECK_API_FIELD(apiTable->BeaconInvokeStandalone);
+    CHECK_API_FIELD(apiTable->BeaconIsAdmin);
+    CHECK_API_FIELD(apiTable->BeaconOpenProcess);
+    CHECK_API_FIELD(apiTable->BeaconOpenThread);
+    CHECK_API_FIELD(apiTable->BeaconOutput);
+    CHECK_API_FIELD(apiTable->BeaconPrintf);
+    CHECK_API_FIELD(apiTable->BeaconReadProcessMemory);
+    CHECK_API_FIELD(apiTable->BeaconRemoveValue);
+    CHECK_API_FIELD(apiTable->BeaconRevertToken);
+    CHECK_API_FIELD(apiTable->BeaconResumeThread);
+    CHECK_API_FIELD(apiTable->BeaconSetThreadContext);
+    CHECK_API_FIELD(apiTable->BeaconSpawnTemporaryProcess);
+    CHECK_API_FIELD(apiTable->BeaconUnmapViewOfFile);
+    CHECK_API_FIELD(apiTable->BeaconUseToken);
+    CHECK_API_FIELD(apiTable->BeaconVirtualAlloc);
+    CHECK_API_FIELD(apiTable->BeaconVirtualAllocEx);
+    CHECK_API_FIELD(apiTable->BeaconVirtualFree);
+    CHECK_API_FIELD(apiTable->BeaconVirtualProtect);
+    CHECK_API_FIELD(apiTable->BeaconVirtualProtectEx);
+    CHECK_API_FIELD(apiTable->BeaconVirtualQuery);
+    CHECK_API_FIELD(apiTable->BeaconWriteProcessMemory);
+    CHECK_API_FIELD(apiTable->FreeLibrary);
+    CHECK_API_FIELD(apiTable->GetModuleHandleA);
+    CHECK_API_FIELD(apiTable->GetModuleHandleW);
+    CHECK_API_FIELD(apiTable->GetProcAddress);
+    CHECK_API_FIELD(apiTable->LoadLibraryA);
+    CHECK_API_FIELD(apiTable->LoadLibraryW);
+    CHECK_API_FIELD(apiTable->memmove);
+    CHECK_API_FIELD(apiTable->memcpy);
+    CHECK_API_FIELD(apiTable->memset);
+    CHECK_API_FIELD(apiTable->toWideChar);
+
+    return TRUE;
+}
+
+#undef CHECK_API_FIELD
 
 #ifdef _DEBUG
 
