@@ -38,6 +38,31 @@ extern "C" {
         return prot;
     }
 
+    BOOL SetSectionPermissions(VOID** sectionMapping, PIMAGE_SECTION_HEADER firstSection, SIZE_T numberOfSections) {
+
+        RETURN_FALSE_ON_NULL(sectionMapping);
+        RETURN_FALSE_ON_ZERO(numberOfSections)
+
+        PIMAGE_SECTION_HEADER sectionPtr = NULL;
+        DWORD  oldProtect = 0;
+        SIZE_T counter    = 0;
+        SIZE_T allocSize  = 0;
+
+        /* Set section permissions */
+        for (counter = 0; counter < numberOfSections; counter++) {
+            sectionPtr = firstSection + counter;
+
+            /* Get whichever size is larger */
+            allocSize = sectionPtr->Misc.VirtualSize > sectionPtr->SizeOfRawData ? sectionPtr->Misc.VirtualSize : sectionPtr->SizeOfRawData;
+
+            /* Use the characteristics to determine the correct permissions */
+            if (allocSize > 0 && !BeaconVirtualProtect(sectionMapping[counter], allocSize, secCharsToProtect(sectionPtr->Characteristics), &oldProtect)) {
+                return FALSE;
+            }
+        }
+        return TRUE;
+    }
+
     /* Get the absolute value of a LONGLONG */
     LONGLONG llabs(LONGLONG n) {
         return (n < 0) ? -n : n;

@@ -254,6 +254,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="api_table.h" />
     <ClInclude Include="base\helpers.h" />
     <ClInclude Include="base\mock.h" />
     <ClInclude Include="beacon.h" />

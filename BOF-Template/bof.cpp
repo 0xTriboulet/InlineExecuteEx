@@ -171,8 +171,8 @@ extern "C" {
         return bResult;
     }
 
-     /* Run the COFF. Returns TRUE on success, and FALSE on failure. */
-     BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T binSize, UCHAR* argData, SIZE_T argLen) {
+    /* Run the COFF. Returns TRUE on success, and FALSE on failure. */
+    BOOL runCoff(CHAR* functionName, UCHAR* coffData, SIZE_T binSize, UCHAR* argData, SIZE_T argLen) {
 
         /* Input validation */
         RETURN_FALSE_ON_NULL(functionName);
@@ -244,17 +244,17 @@ extern "C" {
             goto Cleanup;
         }
 
-#ifdef _M_IX86 // Extra steps for 32-bit
+        #ifdef _M_IX86 // Extra steps for 32-bit
         (void)sprintf(functionNameBuffer, "_%s", functionName);
         functionName = functionNameBuffer;
-#endif // End 32-bit
+        #endif // End 32-bit
 
-#ifdef _DEBUG
+        #ifdef _DEBUG
         coffBase = (PIMAGE_FILE_HEADER)rawCoff;
-#else
+        #else
         /* Cast the header */
         coffBase = (PIMAGE_FILE_HEADER)coffData;
-#endif
+        #endif
         /* Sanity check the BOF */
         if (!isValidCoff(coffData)) {
             BeaconPrintf(CALLBACK_ERROR, "Received invalid BOF: 0x%X", coffBase->Machine);
@@ -423,7 +423,7 @@ extern "C" {
                     PRINT("\n\nRelocation %llu in section index %llu references undefined symbol %s\n", relocationCount, counter, symbolName);
                     goto Cleanup; // Bail so we don't crash
                 }
-#ifdef _M_X64   /* Yanked the relocations straight from CoffLoader + https://github.com/The-Z-Labs/bof-launcher*/
+        #ifdef _M_X64   /* Yanked the relocations straight from CoffLoader + https://github.com/The-Z-Labs/bof-launcher*/
 
                 /* Type == 1 relocation is the 64-bit VA of the relocation target */
                 if (relocationPtr->Type == IMAGE_REL_AMD64_ADDR64) {
@@ -564,8 +564,8 @@ extern "C" {
                     BeaconPrintf(CALLBACK_ERROR, "No code for relocation type: %d\n", relocationPtr->Type);
                     goto Cleanup; // Bail for safety
                 }
-#endif // 64-bit end
-#ifdef _M_IX86
+        #endif // 64-bit end
+        #ifdef _M_IX86
                 /* This is Type == IMAGE_REL_I386_DIR32 relocation code */
                 if (relocationPtr->Type == IMAGE_REL_I386_DIR32) {
                     offsetValue = 0;
@@ -587,7 +587,7 @@ extern "C" {
                     BeaconPrintf(CALLBACK_ERROR, "No code for relocation type: %d\n", relocationPtr->Type);
                     goto Cleanup; // Bail for safety
                 }
-#endif // 32-bit end
+        #endif // 32-bit end
             }
         }
 
@@ -633,10 +633,10 @@ extern "C" {
             }
         }
 
-    Cleanup:
+        Cleanup:
         if (sectionMapping != NULL) {
             for (counter = 0; counter < coffBase->NumberOfSections; counter++) {
-                if (sectionMapping[counter]) {
+                if (sectionMapping[counter] != NULL) {
                     BeaconVirtualFree(sectionMapping[counter], 0, MEM_RELEASE);
                 }
             }
@@ -654,10 +654,55 @@ extern "C" {
         return bResult;
     }
 
+
+    /* Run the PIC. Returns TRUE on success, and FALSE on failure. */
+    BOOL runPIC( UCHAR* picData, SIZE_T binSize, UCHAR* argData, SIZE_T argLen){
+
+        RETURN_FALSE_ON_NULL(picData);
+        RETURN_FALSE_ON_ZERO(binSize);
+
+        BOOL      bResult     = FALSE;
+        DWORD     oldProtect  = 0;
+        API_TABLE apiTable;
+
+        void(__cdecl * go) (CHAR * arg, INT argSize, PAPI_TABLE apiTable);
+        
+        if (!g_if && !InitInternalFunctionsDynamic()) {
+            TracingBeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
+            goto Cleanup;
+        }
+
+        if (!BuildApiTable(&apiTable)) { // BuildApiTable zero's out apiTable for us
+            goto Cleanup;
+        }
+
+        /* Make sure we have RX */
+        if(!BeaconVirtualProtect(picData, binSize, PAGE_EXECUTE_READ, &oldProtect)){
+            goto Cleanup;
+        }
+
+        go = (void(__cdecl * ) (CHAR * arg, INT argSize, PAPI_TABLE apiTable)) picData;
+        go((char*) argData, argLen, &apiTable);
+
+        __stosb((PBYTE)&apiTable, 0, sizeof(apiTable));
+
+        /* Restore */
+        if(!BeaconVirtualProtect(picData, binSize, oldProtect, &oldProtect)){
+            goto Cleanup;
+        }
+
+        /* We survived somehow lol */
+        bResult = TRUE;
+
+    Cleanup:
+        return bResult;
+    }
+
     void go(char* args, int len) {
 
         datap parser;
-        CHAR* functionName = NULL;
+        CHAR* functionName           = NULL;
+        CHAR  reservedFunctionName[] = "pic";
 
         UCHAR* binData   = NULL;
         SIZE_T binSize  = 0;
@@ -667,7 +712,15 @@ extern "C" {
 
         BOOL   validCoff = FALSE;
         BOOL   validPE   = FALSE;
+        BOOL   validPIC  = FALSE;
         BOOL   bResult   = FALSE;
+
+        DFR_LOCAL(NTDLL, _strnicmp)
+
+        if (!g_if && !InitInternalFunctionsDynamic()) {
+            TracingBeaconPrintf(CALLBACK_ERROR, "InternalFunction init failed");
+            goto Cleanup;
+        }
 
         __stosb((PBYTE)&parser, 0, sizeof(parser));
 
@@ -681,9 +734,10 @@ extern "C" {
         /* Check if the input binary is something this BOF can run */
         validCoff = isValidCoff(binData);
         validPE = isValidPE(binData);
+        validPIC = (_strnicmp(functionName, reservedFunctionName, sizeof(reservedFunctionName) - 1) == 0);
 
         /* If we can't run it, then bail */
-        if (validCoff == FALSE && validPE == FALSE) {
+        if (validCoff == FALSE && validPE == FALSE && validPIC == FALSE) {
             BeaconPrintf(CALLBACK_ERROR, "Invalid binary!");
             goto Cleanup;
         }
@@ -696,6 +750,10 @@ extern "C" {
             /* If it's a BOF-PE and we successfully ran it */
             bResult = TRUE;
          }
+        else if(validPIC == TRUE && runPIC(binData, binSize, argData, argLen)){
+            /* If we intended to run this as PIC, and we successfully ran it */
+            bResult = TRUE;
+        }
 
          /* Everything worked! */
          if (bResult == TRUE) {

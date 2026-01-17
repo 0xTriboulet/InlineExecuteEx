@@ -1,3 +1,4 @@
+#pragma once
 #ifdef __cplusplus
 #ifndef _DEBUG
 #define DFR(module, function) \
