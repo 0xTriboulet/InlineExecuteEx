@@ -4,7 +4,7 @@ the benefits of this, Cobalt Strike pre-processes BOFs to strip away sections th
 confers some advantages for users of the framework. It reduces the size of the BOF that Beacon receives from the Teamserver, and the BOF 
 loader in Beacon is very small compared to other BOF implementations. Unfortunately, this pre-processing has the inadvertent effect of
 reducing the features available from a BOF because the additional information is not available to Beacon at load-time. `InlineExcuteEx`
-implements [COFFLoader](https://github.com/trustedsec/COFFLoader) as a Cobalt Strike compatible BOF, which can be used to fire other BOFs
+implements [COFFLoader](https://github.com/trustedsec/COFFLoader), and a couple of changes ported from [bof-launcher](https://github.com/The-Z-Labs/bof-launcher), as a Cobalt Strike compatible BOF. That means this BOF can be used to fire other BOFs
 in a more complete way than what is currently possible from Beacon.
 
 The obvious trade here is that you lose the approximate lightness of PIC offered by Beacon's BOF loader, in favor of a heavier abstraction. This is a nuance that may or may not be relevant to your use case. The intent of this implementation is to offer users of the framework a *choice*.
@@ -30,6 +30,11 @@ beacon> help inline-execute-ex
 
 Usage: inline-execute-ex 'bof.o' 'go' 'hello world!'
 ```
+
+## BOF-PE Compatability
+`InlineExecuteEx` neatly wraps both BOF-PE and BOF compatability into a single BOF. This means that you can access all the features of a BOF-PE, without worrying about any extra gymnastics in your `.cna` script. In fact, calling `inline-execute-ex` from a Beacon console will also work as expected.
+
+![alt text](image.png)
 
 ## Drop-In Replacement for `beacon_inline_execute`
 Conventional `.cna` scripts register an alias that calls `beacon_inline_execute` to task Beacon to run a BOF. If you want to use `InlineExecuteEx` instead of the default BOF loader for a capability, you can move the `inline-execute-ex.cna` script, the `Release` directory, and the `x64` directory to the same directory as your BOF's `.cna` script.
