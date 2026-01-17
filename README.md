@@ -64,7 +64,7 @@ typedef void (*memset_t)(void* dest, int value, size_t count);
 
 void __cdecl go (CHAR * arg, INT argSize, PAPI_TABLE apiTable) {
     char buffer[256];
-	// Cast the pointer to a function and call it
+    // Cast the pointer to a function and call it
     ((memset_t)(apiTable->memset))(buffer, 0, sizeof(buffer));
     ((memcpy_t)(apiTable->memcpy))(buffer, arg, argSize);
     ((BeaconPrintf_t)(apiTable->BeaconPrintf))(CALLBACK_OUTPUT, buffer);
@@ -119,7 +119,7 @@ alias dir {
 
 [...snip...]
 
-    # We changed the line below
+	# We changed the line below
 	beacon_inline_execute_ex($1, readbof($1, "dir", $msg, $ttp), "go", $args);
 }
 ```
